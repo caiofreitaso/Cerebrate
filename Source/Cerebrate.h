@@ -23,6 +23,7 @@ namespace Cerebrate {
 		return false;
 	}
 
+	
 	#pragma region Units Constants
 	const BWAPI::UnitType Egg = BWAPI::UnitType(36);
 	const BWAPI::UnitType Drone = BWAPI::UnitType(41);
@@ -38,8 +39,55 @@ namespace Cerebrate {
 	#pragma endregion
 
 	enum Role {
-		Harass
+		Civil,
+		Harass,
+		JackOfAllTrades,
+		Siege,
+		AntiAir,
+		AOE,
+		Detector,
+		Massable,
+		CrowdControl,
+		Tank
 	};
+	typedef std::vector<Role> Roles;
+	Roles getRoles(BWAPI::UnitType type) {
+		Roles ret;
+		switch(type.getID()) {
+			case 42:
+				ret.push_back(Detector);
+			case 36:
+			case 41:
+				ret.push_back(Civil);
+				break;
+			case 43:
+				ret.push_back(Harass);
+			case 37:
+				ret.push_back(Massable);
+				break;
+			case 38:
+				ret.push_back(JackOfAllTrades);
+				ret.push_back(Massable);
+				break;
+			case 103:
+				ret.push_back(Siege);
+			case 46:
+				ret.push_back(AOE);
+				ret.push_back(CrowdControl);
+				break;
+			case 45:
+				ret.push_back(CrowdControl);
+				break;
+			case 47:
+				ret.push_back(AntiAir);
+				break;
+			case 39:
+				ret.push_back(Tank);
+				break;
+		}
+		return ret;
+	}
+
 
 	struct UnitManager {
 		Unitset units;
@@ -83,6 +131,7 @@ namespace Cerebrate {
 		}
 	};
 
+	
 	namespace Micro {
 		bool isntValid(Unit u) {
 			return !u->exists() || u->isLockedDown() || u->isMaelstrommed() || u->isStasised() ||
@@ -386,10 +435,11 @@ namespace Cerebrate {
 					drones *= drones;
 				}
 				
-				void clean(double priorityThreshold) {
+				void clean(double priorityThreshold, UnitManager units) {
 					if (unitQueue.size())
 						for (ProductionQueue::iterator i = unitQueue.begin(); i != unitQueue.end();) {
-							if (i->priority < priorityThreshold || i->type.isWorker()) {
+							if (i->priority < priorityThreshold || i->type == Drone ||
+								(i->type == Overlord && (units.eggsMorphing(Overlord) != 0 || units.notCompleted(Overlord) != 0))) {
 								unitQueue.erase(i);
 								i = unitQueue.begin();
 							} else
@@ -495,7 +545,7 @@ namespace Cerebrate {
 			if (BWAPI::Broodwar->getFrameCount() % BWAPI::Broodwar->getLatencyFrames() != 0)
 				return;
 
-			industry.clean(thresholds.priority);
+			industry.clean(thresholds.priority, allUnits);
 			industry.queueCivil(thresholds.drones, thresholds.overlords);
 
 			industry.morph(publicWorks);
@@ -513,13 +563,6 @@ namespace Cerebrate {
 			}
 		}
 		void draw() {
-			for (int i = 0; i < 199; i++) {
-				BWAPI::Broodwar->drawLineScreen(200-i,300-(int)((10000/42)*finances.income[i].mineral),
-												200-i-1,300-(int)((10000/42)*finances.income[i+1].mineral),BWAPI::Colors::Cyan);
-				BWAPI::Broodwar->drawLineScreen(200-i,300-(int)((10000/42)*finances.income[i].gas),
-												200-i-1,300-(int)((10000/42)*finances.income[i+1].gas),BWAPI::Colors::Green);
-			}
-
 			#pragma region Resources
 			BWAPI::Broodwar->setTextSize(2);
 			unsigned i = 0;
@@ -538,9 +581,9 @@ namespace Cerebrate {
 			#pragma endregion			
 
 			#pragma region Text
-			BWAPI::Broodwar->drawTextScreen(250, 0, "FPS: %d", BWAPI::Broodwar->getFPS());
+			BWAPI::Broodwar->drawTextScreen(300, 0, "FPS: %0d", BWAPI::Broodwar->getFPS());
 			BWAPI::Broodwar->setTextSize(0);
-			BWAPI::Broodwar->drawTextScreen(250, 16, "APM: %d", BWAPI::Broodwar->getAPM());
+			BWAPI::Broodwar->drawTextScreen(305, 16, "APM: %d", BWAPI::Broodwar->getAPM());
 			BWAPI::Broodwar->drawTextScreen(5, 0, "Income: %f/%f %d", finances.income[0].mineral, finances.income[0].gas, finances.income[0].frame);
 			BWAPI::Broodwar->drawTextScreen(5, 10, "Growth: %f/%f", finances.incomeGrowth.mineral, finances.incomeGrowth.gas);
 			BWAPI::Broodwar->drawTextScreen(5, 20, "Need for a) drones: %f\tb) overlords: %f", industry.drones, industry.overlords);
@@ -555,30 +598,41 @@ namespace Cerebrate {
 			for (i = 0; i < allUnits.size() - 1; i++) {
 				type = allUnits[i]->getType();
 				if (!has(alreadyDone, type)) {
-					units_decl << type.c_str();
-					units_decl << ": ";
+					units_decl << "\x04";
+					units_decl << &type.c_str()[5];
+					units_decl << ":\x02";
 					units_decl << allUnits.getType(type).size();
-					units_decl << ",";
+					units_decl << ", ";
 					alreadyDone.push_back(type);
 				}
 			}
 			type = allUnits[i]->getType();
 			if (!has(alreadyDone, type)) {
-				units_decl << type.c_str();
-				units_decl << ": ";
+				units_decl << "\x04";
+				units_decl << &type.c_str()[5];
+				units_decl << ":\x02";
 				units_decl << allUnits.getType(type).size();
 			}
 			alreadyDone.clear();
 			BWAPI::Broodwar->drawTextScreen(5, 40, units_decl.str().c_str());
 			
 			if (publicWorks.hatcheries.size()) {
-				if (industry.unitQueue.size())
-					BWAPI::Broodwar->drawTextScreen(5, 50, "Queue size: %d [%s]",industry.unitQueue.size(),industry.unitQueue[0].type.getName().c_str());
-				else
-					BWAPI::Broodwar->drawTextScreen(5, 50, "Queue size: %d",industry.unitQueue.size());
+				BWAPI::Broodwar->setTextSize(1);
+				BWAPI::Broodwar->drawTextScreen(5, 50, "Queue:");
+				BWAPI::Broodwar->setTextSize(0);
+				for (i = 0; i < industry.unitQueue.size(); i++)
+					BWAPI::Broodwar->drawTextScreen(5,65+10*i,"\x04%s:%.3f",&industry.unitQueue[i].type.getName().c_str()[5],industry.unitQueue[i].priority);
 			}
 			#pragma endregion
 
+			#pragma region Income Graph
+			for (int i = 0; i < 199; i++) {
+				BWAPI::Broodwar->drawLineScreen(200-i,300-(int)((10000/42)*finances.income[i].mineral),
+												200-i-1,300-(int)((10000/42)*finances.income[i+1].mineral),BWAPI::Colors::Cyan);
+				BWAPI::Broodwar->drawLineScreen(200-i,300-(int)((10000/42)*finances.income[i].gas),
+												200-i-1,300-(int)((10000/42)*finances.income[i+1].gas),BWAPI::Colors::Green);
+			}
+			#pragma endregion
 			
 		}
 
@@ -622,21 +676,25 @@ namespace Cerebrate {
 		virtual void onUnitHide(BWAPI::Unit* unit) { }
 		virtual void onUnitCreate(BWAPI::Unit* unit) { }
 		virtual void onUnitDestroy(BWAPI::Unit* unit) {
-			if (unit->getType().isBuilding()) {
-				if (unit->getType().isResourceDepot())
-					_data.removeHatchery(unit);
-			} else
-				_data.allUnits.remove(unit);
+			if (unit->getPlayer() == _data.player) {
+				if (unit->getType().isBuilding()) {
+					if (unit->getType().isResourceDepot())
+						_data.removeHatchery(unit);
+				} else
+					_data.allUnits.remove(unit);
+			}
 		}
 		virtual void onUnitMorph(BWAPI::Unit* unit) { }
 		virtual void onUnitRenegade(BWAPI::Unit* unit) { }
 		virtual void onSaveGame(std::string gameName) { }
 		virtual void onUnitComplete(BWAPI::Unit *unit) {
-			if (unit->getType().isBuilding()) {
-				if (unit->getType().isResourceDepot())
-					_data.newHatchery(unit);
-			} else
-				_data.allUnits.add(unit);
+			if (unit->getPlayer() == _data.player) {
+				if (unit->getType().isBuilding()) {
+					if (unit->getType().isResourceDepot())
+						_data.newHatchery(unit);
+				} else
+					_data.allUnits.add(unit);
+			}
 		}
 		// Everything below this line is safe to modify.
 

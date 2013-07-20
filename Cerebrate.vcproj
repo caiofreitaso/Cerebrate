@@ -18,7 +18,7 @@
 		<Configuration
 			Name="Debug|Win32"
 			OutputDirectory="$(SolutionDir)$(ConfigurationName)"
-			IntermediateDirectory="$(SolutionDir)"
+			IntermediateDirectory="$(SolutionDir)Intermediate"
 			ConfigurationType="2"
 			CharacterSet="1"
 			WholeProgramOptimization="1"
