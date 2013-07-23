@@ -17,6 +17,11 @@ namespace Cerebrate {
 	typedef BWAPI::Unit* Unit;
 	typedef BWAPI::Player* Player;
 	typedef std::vector<BWAPI::Unit*> Unitset;
+	typedef BWTA::BaseLocation* Base;
+	typedef std::vector<Base> Baseset;
+	typedef BWTA::Chokepoint* Choke;
+	typedef std::vector<Base> Chokeset;
+
 
 	template<typename T>
 	bool has(std::vector<T>& vector, T value) {
@@ -223,6 +228,9 @@ namespace Cerebrate {
 			struct Builder {
 				Unitset hatcheries;
 				Unitset techBuildings;
+
+				Baseset basesTaken;
+
 				ProductionQueue buildQueue;
 
 				double expand;
@@ -237,32 +245,32 @@ namespace Cerebrate {
 					return ret;
 				}
 
-				Unit getNearestHatch(Unit unit) {
+				Unit getNearestHatch(BWAPI::Position where) {
 					Unitset::iterator hatch = hatcheries.begin();
 					
-					double distance = unit->getPosition().getDistance((*hatch)->getPosition());
+					double distance = where.getDistance((*hatch)->getPosition());
 					Unit ret = *hatch;
 					
 					hatch++;
 					
 
 					for (; hatch != hatcheries.end(); hatch++)
-						if (unit->getPosition().getDistance((*hatch)->getPosition()) < distance) {
-							distance = unit->getPosition().getDistance((*hatch)->getPosition());
+						if (where.getDistance((*hatch)->getPosition()) < distance) {
+							distance = where.getDistance((*hatch)->getPosition());
 							ret = *hatch;
 						}
 
 					return ret;
 				}
-				unsigned getNearestHatchIndex(Unit unit) {
-					double distance = unit->getPosition().getDistance(hatcheries[0]->getPosition());
+				unsigned getNearestHatchIndex(BWAPI::Position where) {
+					double distance = where.getDistance(hatcheries[0]->getPosition());
 					unsigned ret = 0, i = 0;
 					
 					i++;
 
 					for (; i < hatcheries.size(); i++)
-						if (unit->getPosition().getDistance(hatcheries[i]->getPosition()) < distance) {
-							distance = unit->getPosition().getDistance(hatcheries[i]->getPosition());
+						if (where.getDistance(hatcheries[i]->getPosition()) < distance) {
+							distance = where.getDistance(hatcheries[i]->getPosition());
 							ret = i;
 						}
 
@@ -278,46 +286,147 @@ namespace Cerebrate {
 				Mining,
 				Returning
 			};
-			typedef std::pair<Unit,MinerStates> MinerDrone;
+			
+			struct MinerDrone {
+				Unit drone;
+				MinerStates state;
+				MinerDrone(Unit u, MinerStates s):drone(u),state(s) { }
+			};
+
 			typedef std::vector<MinerDrone> Minerset;
 
-			struct Mineral {
-				Unit patch;
-				bool mining;
-				Minerset miners;
-				Mineral(Unit m,Minerset s):patch(m),mining(false),miners(s) { }
-			};
-			class Mineralset {
-				std::vector<Mineral> _data;
-				public:
-					Mineralset() { }
-					Mineralset(Unitset const& minerals) {
-						for (unsigned i = 0; i < minerals.size(); i++)
-							_data.push_back(Mineral(minerals[i],Minerset()));
+			struct Mineralset {
+				std::vector<Unit> patches;
+				std::vector<bool> mining;
+				std::vector<Minerset> miners;
+				BWAPI::Position hatch;
+
+				Mineralset() { }
+				Mineralset(Unitset const& minerals, BWAPI::Position hatchery) {
+					for (unsigned i = 0; i < minerals.size(); i++) {
+						patches.push_back(minerals[i]);
+						mining.push_back(false);
+						miners.push_back(Minerset());
+					}
+					hatch = hatchery;
+				}
+
+				void update() {
+					std::vector<unsigned> empties;
+					for (unsigned i = 0; i < patches.size(); i++)
+						if (patches[i]->getResources() == 0)
+							empties.push_back(i);
+					for (unsigned i = 0; i < empties.size(); i++) {
+						patches.erase(patches.begin()+empties[i]-i);
+						mining.erase(mining.begin()+empties[i]-i);
+						miners.erase(miners.begin()+empties[i]-i);
 					}
 
-					Mineral& operator[](unsigned i) { return _data[i]; }
-					Mineral const& operator[](unsigned i) const { return _data[i]; }
+					for (unsigned i = 0; i < miners.size(); i++)
+						for (unsigned j = 0; j < miners[i].size();)
+							if (miners[i][j].drone->exists())
+								j++;
+							else
+								miners[i].erase(miners[i].begin()+j);
+				}
 
-					unsigned size() const { return _data.size(); }
-					
-					Unitset getMiners() const {
-						Unitset ret;
+				Unitset getMiners() const {
+					Unitset ret;
 
-						for(unsigned i = 0; i < _data.size(); i++)
-							for (unsigned j = 0; j < _data[i].miners.size(); j++)
-								ret.push_back(_data[i].miners[j].first);
+					for(unsigned i = 0; i < miners.size(); i++)
+						for (unsigned j = 0; j < miners[i].size(); j++)
+							ret.push_back(miners[i][j].drone);
+
+					return ret;
+				}
+				unsigned size() const { return patches.size(); }
+				unsigned indexOf(Unit mineral) const {
+					unsigned i = 0;
+					for (; i < patches.size(); i++)
+						if (patches[i] == mineral)
+							break;
+					return i;
+				}
+
+				void addMiner(unsigned index, MinerDrone drone) { miners[index].push_back(drone); }
+				void addMiner(Unit mineral, MinerDrone drone) { miners[indexOf(mineral)].push_back(drone); }
+				void act() {
+					for (unsigned i = 0; i < miners.size(); i++)
+						for (unsigned j = 0; j < miners[i].size(); j++)
+							switch(miners[i][j].state) {
+								case Idle:
+									if (miners[i][j].drone->getOrder() != BWAPI::Orders::ReturnMinerals)
+										miners[i][j].state = Waiting;
+									break;
+								case Waiting:
+									if (!mining[i]) {
+										miners[i][j].drone->gather(patches[i]);
+										mining[i] = true;
+										miners[i][j].state = Mining;
+									} else
+										miners[i][j].drone->follow(patches[i]);
+									break;
+								case Mining:
+									if (miners[i][j].drone->isCarryingMinerals()) {
+										miners[i][j].state = Returning;
+										mining[i] = false;
+									}
+									break;
+								case Returning:
+									if (miners[i][j].drone->isCarryingMinerals() && miners[i][j].drone->getOrder() != BWAPI::Orders::ReturnMinerals)
+										miners[i][j].drone->returnCargo();
+									else
+										miners[i][j].state = Idle;
+									break;
+							}
+				}
+
+				Unit getBestMineral() {
+					Unitset candidates;
+					unsigned minSize = 4;
+					for (unsigned i = 0; i < miners.size(); i++)
+						if (miners[i].size() < minSize)
+							minSize = miners[i].size();
+
+					for (unsigned i = 0; i < miners.size(); i++)
+						if (miners[i].size() == minSize)
+							candidates.push_back(patches[i]);
+
+					if (candidates.size()) {
+						double distance = hatch.getDistance(candidates[0]->getPosition());
+						Unit ret = candidates[0];
+
+						for (unsigned i = 1; i < candidates.size(); i++)
+							if (hatch.getDistance(candidates[i]->getPosition()) < distance) {
+								distance = hatch.getDistance(candidates[i]->getPosition());
+								ret = candidates[i];
+							}
 
 						return ret;
-					}
+					} else
+						return 0;
+				}
+				Unit getDrone() {
+					std::vector<unsigned> candidates;
+					for (unsigned i = 0; i < miners.size(); i++)
+						if (miners[i].size() > 0)
+							for (unsigned j = 0; j < candidates.size(); j++)
+								if (hatch.getDistance(patches[i]->getPosition()) < hatch.getDistance(patches[j]->getPosition())) {
+									candidates.insert(candidates.begin()+j,i);
+									break;
+								}
 
-					unsigned indexOf(Unit mineral) const {
-						unsigned i = 0;
-						for (; i < _data.size(); i++)
-							if (_data[i].patch == mineral)
-								break;
-						return i;
-					}
+					if (candidates.size())
+						for (unsigned i = 0; i < candidates.size(); i++)
+							for(unsigned j = 0; j < miners[candidates[i]].size(); j++)
+								if (miners[candidates[i]][j].state != Mining) {
+									Unit ret = miners[candidates[i]][j].drone;
+									miners[candidates[i]].erase(miners[candidates[i]].begin()+j);
+									return ret;
+								}
+					else
+						return 0;
+				}
 			};
 
 			//typedef std::vector<Mineral> Mineralset;
@@ -341,7 +450,7 @@ namespace Cerebrate {
 
 
 				void add(Unit hatch) {
-					minerals.insert(minerals.begin(),Mineralset(nearbyMinerals(hatch)));
+					minerals.insert(minerals.begin(),Mineralset(nearbyMinerals(hatch),hatch->getPosition()));
 				}
 
 				void remove(unsigned index) {
@@ -349,9 +458,16 @@ namespace Cerebrate {
 				}
 
 				void update() {
+					for (unsigned i = 0; i < minerals.size(); i++)
+						minerals[i].update();
 
+					std::vector<unsigned> empties;
+					for (unsigned i = 0; i < minerals.size(); i++)
+						if (minerals[i].size() == 0)
+							empties.push_back(i);
+					for (unsigned i = 0; i < empties.size(); i++)
+						minerals.erase(minerals.begin()+empties[i]-i);
 				}
-
 
 				Unitset getAllMiners() const {
 					Unitset ret;
@@ -364,34 +480,8 @@ namespace Cerebrate {
 					return ret;
 				}
 
-				Unit getBestMineral(unsigned index, Infrastructure::Builder& builder) const {
-					Unitset candidates;
-					unsigned minSize = 3;
-					for (unsigned i = 0; i < minerals[index].size(); i++)
-						if (minerals[index][i].miners.size() < minSize)
-							minSize = minerals[index][i].miners.size();
 
-					for (unsigned i = 0; i < minerals[index].size(); i++)
-						if (minerals[index][i].miners.size() <= minSize)
-							candidates.push_back(minerals[index][i].patch);
-
-					if (candidates.size()) {
-						BWAPI::Position hatch = builder.hatcheries[index]->getPosition();
-						double distance = hatch.getDistance(candidates[0]->getPosition());
-						Unit ret = candidates[0];
-
-						for (unsigned i = 1; i < candidates.size(); i++)
-							if (hatch.getDistance(candidates[i]->getPosition()) < distance) {
-								distance = hatch.getDistance(candidates[i]->getPosition());
-								ret = candidates[i];
-							}
-
-						return ret;
-					} else
-						return 0;
-				}
-
-				void idleWorker(Unit unit, Infrastructure::Builder& builder) {
+				void idleWorker(Unit unit) {
 					#ifndef NORMAL_MINING
 					if (!has(getAllMiners(),unit))
 					#endif
@@ -399,55 +489,34 @@ namespace Cerebrate {
 						Unit mineral = 0;
 						unsigned i = 0;
 						for (; i < minerals.size(); i++) {
-							mineral = getBestMineral(i,builder);
+							mineral = minerals[i].getBestMineral();
 							if (mineral)
 								break;
 						}
 						#ifdef NORMAL_MINING
 						unit->gather(mineral);
 						#else
-						unsigned j = minerals[i].indexOf(mineral);
-
-						minerals[i][j].miners.push_back(MinerDrone(unit,Idle));
+						minerals[i].addMiner(mineral,MinerDrone(unit,Idle));
 						#endif
 					}
 				}
 
 				void act() {
 					for (unsigned i = 0; i < minerals.size(); i++)
-						for (unsigned j = 0; j < minerals[i].size(); j++) {
-							Unit patch = minerals[i][j].patch;
-							for (Minerset::iterator drone = minerals[i][j].miners.begin(); drone != minerals[i][j].miners.end(); drone++) {
-								switch(drone->second) {
-									case Idle:
-										if (drone->first->getOrder() != BWAPI::Orders::ReturnMinerals)
-											drone->second = Waiting;
-										break;
-									case Waiting:
-										if (!minerals[i][j].mining) {
-											drone->first->gather(patch);
-											minerals[i][j].mining = true;
-											drone->second = Mining;
-										} else
-											drone->first->follow(patch);
-										break;
-									case Mining:
-										if (drone->first->isCarryingMinerals()) {
-											drone->second = Returning;
-											minerals[i][j].mining = false;
-										}
-										break;
-									case Returning:
-										if (drone->first->isCarryingMinerals() && drone->first->getOrder() != BWAPI::Orders::ReturnMinerals)
-											drone->first->returnCargo();
-										else
-											drone->second = Idle;
-										break;
+						minerals[i].act();
+				}
+				Unit getDrone(BWAPI::Position where) {
+					double distance = where.getDistance(minerals[0].hatch);
+					unsigned index = 0, i = 0;
+					
+					i++;
 
-
-								}
-							}
+					for (; i < minerals.size(); i++)
+						if (where.getDistance(minerals[i].hatch) < distance) {
+							distance = where.getDistance(minerals[i].hatch);
+							index = i;
 						}
+					return minerals[index].getDrone();
 				}
 			};
 		};
@@ -516,7 +585,7 @@ namespace Cerebrate {
 				}
 				void needForDrones(Infrastructure::Builder& builder, Economy::Economist& economist) {
 					double	incomePerHatch = economist.income[0].mineral/builder.hatcheries.size();
-					double	nope = (5*incomePerHatch/2)*(5*incomePerHatch/2);
+					double	nope = 9*incomePerHatch*incomePerHatch;
 					if (nope > 1)
 						nope = 1;
 					drones = 1 - nope;
@@ -575,6 +644,13 @@ namespace Cerebrate {
 		};
 		//Need to know
 		namespace Intelligence {
+			struct Agent {
+				Baseset enemyBases;
+
+				void sendScout() {
+
+				}
+			};
 		};
 	};
 	
@@ -611,14 +687,20 @@ namespace Cerebrate {
 			#endif
 		}
 		void start() {
-			//BWTA::readMap();
+			#pragma region BWTA
+			BWTA::readMap();
+			CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)analyzeThread, this, 0, NULL);
+			#pragma endregion
+			
+			#pragma region Set Broodwar commands
 			BWAPI::Broodwar->enableFlag(BWAPI::Flag::UserInput);
 			BWAPI::Broodwar->setCommandOptimizationLevel(2);
-			if (!debug) {
-				BWAPI::Broodwar->setLocalSpeed(0);
+			//BWAPI::Broodwar->setLocalSpeed(0);
+			if (!debug)
 				BWAPI::Broodwar->setGUI(false);
-			}
 			player = BWAPI::Broodwar->self();
+			#pragma endregion
+			
 			#ifdef SAVE_CSV
 			#ifdef NORMAL_MINING
 			file.open("normal.csv");
@@ -627,12 +709,12 @@ namespace Cerebrate {
 			#endif
 			#endif
 		}
+
 		void update() {
 			finances.update(player, BWAPI::Broodwar->getFrameCount());
 			#ifdef SAVE_CSV
 			file << player->gatheredMinerals() - 50 << "\n";
 			#endif
-			mines.update();
 			industry.needForDrones(publicWorks, finances);
 			industry.needForOverlords(publicWorks, allUnits, player);
 		}
@@ -663,52 +745,73 @@ namespace Cerebrate {
 					continue;
 
 				if ((*u)->isIdle()) {
-					if ((*u)->getType().isWorker()) {
-						mines.idleWorker(*u, publicWorks);
-					} else {
+					if ((*u)->getType().isWorker())
+						mines.idleWorker(*u);
+					else {
 					}
 				}
 			}
 		}
 		void draw() {
-			#pragma region Resources
 			unsigned i = 0;
+
+			#pragma region Resources
 			for (; i < publicWorks.hatcheries.size(); i++) {
 				BWAPI::Position hatch = publicWorks.hatcheries[i]->getPosition();
 
 				for (unsigned j = 0; j < mines.minerals[i].size(); j++) {
-					BWAPI::Position mineral = mines.minerals[i][j].patch->getPosition();
-					int resources = mines.minerals[i][j].patch->getResources();
+					BWAPI::Position mineral = mines.minerals[i].patches[j]->getPosition();
+					int resources = mines.minerals[i].patches[j]->getResources();
 					
-					BWAPI::Broodwar->setTextSize(2);
-					BWAPI::Broodwar->drawTextMap(mineral.x()-17, mineral.y()-8, "\x1F%d", resources);
 					BWAPI::Broodwar->setTextSize(0);
-					BWAPI::Broodwar->drawTextMap(mineral.x()-3, mineral.y()+3, "\x1B%s %d", mines.minerals[i][j].mining?"+":"-", mines.minerals[i][j].miners.size());
-					for (unsigned k = 0; k < mines.minerals[i][j].miners.size(); k++) {
-						BWAPI::Position drone = mines.minerals[i][j].miners[k].first->getPosition();
+					for (unsigned k = 0; k < mines.minerals[i].miners[j].size(); k++) {
+						BWAPI::Position drone = mines.minerals[i].miners[j][k].drone->getPosition();
 						std::string state;
-						switch (mines.minerals[i][j].miners[k].second) {
+						BWAPI::Color color;
+						switch (mines.minerals[i].miners[j][k].state) {
 							case Macro::Resources::Idle:
-								state = "Idle";
+								state = "\x05Idle";
+								color = BWAPI::Colors::Grey;
 								break;
 							case Macro::Resources::Waiting:
-								state = "Wait";
+								state = "\x16Wait";
+								color = BWAPI::Colors::White;
 								break;
 							case Macro::Resources::Mining:
-								state = "Mine";
+								state = "\x1FMine";
+								color = BWAPI::Colors::Cyan;
 								break;
 							case Macro::Resources::Returning:
-								state = "Return";
+								state = "\x0FReturn";
+								color = BWAPI::Colors::Teal;
 								break;
 						}
-						BWAPI::Broodwar->drawTextMap(drone.x()-8, drone.y()-4, "\x1F%s", state.c_str());
+						BWAPI::Broodwar->drawLineMap(drone.x(), drone.y(), mineral.x(), mineral.y(), color);
+						BWAPI::Broodwar->drawTextMap(drone.x()-8, drone.y()-4, "%s", state.c_str());
 					}
+					BWAPI::Broodwar->setTextSize(2);
+					BWAPI::Broodwar->drawTextMap(mineral.x()-17, mineral.y()-8, "\x1F%d", resources);
+					BWAPI::Broodwar->drawTextMap(mineral.x()-3, mineral.y()-4, "%d", mines.minerals[i].miners[j].size());
 				}
 				BWAPI::Broodwar->setTextSize(2);
-				BWAPI::Broodwar->drawTextMap(hatch.x(), hatch.y(), "\x11Miners: %d", mines.minerals[i].getMiners().size());
-				BWAPI::Broodwar->drawEllipseMap(hatch.x(), hatch.y(), 300, 250, BWAPI::Colors::Cyan);
+				BWAPI::Broodwar->drawTextMap(hatch.x()-28, hatch.y()-16, "\x11Miners: %d", mines.minerals[i].getMiners().size());
 			}
-			#pragma endregion			
+			#pragma endregion
+
+			for (i = 0; i < publicWorks.basesTaken.size(); i++) {
+				BWTA::Region* base = publicWorks.basesTaken[i]->getRegion();
+				BWTA::Polygon drawing = base->getPolygon();
+
+				if (drawing.size()) {
+					BWAPI::Broodwar->drawLineMap(drawing[0].x(), drawing[0].y(), drawing[drawing.size()-1].x(), drawing[drawing.size()-1].y(), BWAPI::Colors::Purple);
+					for (unsigned j = 0; j < drawing.size()-1; j++)
+						BWAPI::Broodwar->drawLineMap(drawing[j].x(), drawing[j].y(), drawing[j+1].x(), drawing[j+1].y(), BWAPI::Colors::Purple);
+				}
+
+				std::set<Choke> chokes = base->getChokepoints();
+				for (std::set<Choke>::iterator c = chokes.begin(); c != chokes.end(); c++)
+					BWAPI::Broodwar->drawEllipseMap((*c)->getCenter().x(), (*c)->getCenter().y(), (*c)->getWidth(), (*c)->getWidth(), BWAPI::Colors::Red);
+			}
 
 			#pragma region Text
 			BWAPI::Broodwar->drawTextScreen(300, 0, "FPS: %0d", BWAPI::Broodwar->getFPS());
@@ -766,6 +869,7 @@ namespace Cerebrate {
 			
 		}
 
+		
 		void newHatchery(Unit hatch) {
 			publicWorks.hatcheries.insert(publicWorks.hatcheries.begin(), hatch);
 			mines.add(hatch);
@@ -780,10 +884,38 @@ namespace Cerebrate {
 			mines.remove(index);
 		}
 
+
+		void deleteUnit(Unit unit) {
+			if (unit->getPlayer() == player) {
+				if (unit->getType().isBuilding()) {
+					if (unit->getType().isResourceDepot())
+						removeHatchery(unit);
+				} else
+					allUnits.remove(unit);
+			}
+		}
+		void newUnit(Unit unit) {
+			if (unit->getPlayer() == player) {
+				if (unit->getType().isBuilding()) {
+					if (unit->getType().isResourceDepot())
+						newHatchery(unit);
+				} else
+					allUnits.add(unit);
+			}
+		}
+	
+		static DWORD WINAPI analyzeThread(LPVOID pointer) {
+			BWTA::analyze();
+			Cerebrate* target = (Cerebrate*) pointer;
+
+			if (BWTA::getStartLocation(BWAPI::Broodwar->self()) != 0)
+				target->publicWorks.basesTaken.push_back(BWTA::getStartLocation(BWAPI::Broodwar->self()));
+			return 0;
+		}
 	};
 
 
-	class Interface : public BWAPI::AIModule
+	class AIModule : public BWAPI::AIModule
 	{
 		private:
 			Cerebrate _data;
@@ -806,25 +938,13 @@ namespace Cerebrate {
 		virtual void onUnitHide(BWAPI::Unit* unit) { }
 		virtual void onUnitCreate(BWAPI::Unit* unit) { }
 		virtual void onUnitDestroy(BWAPI::Unit* unit) {
-			if (unit->getPlayer() == _data.player) {
-				if (unit->getType().isBuilding()) {
-					if (unit->getType().isResourceDepot())
-						_data.removeHatchery(unit);
-				} else
-					_data.allUnits.remove(unit);
-			}
+			_data.deleteUnit(unit);
 		}
 		virtual void onUnitMorph(BWAPI::Unit* unit) { }
 		virtual void onUnitRenegade(BWAPI::Unit* unit) { }
 		virtual void onSaveGame(std::string gameName) { }
 		virtual void onUnitComplete(BWAPI::Unit *unit) {
-			if (unit->getPlayer() == _data.player) {
-				if (unit->getType().isBuilding()) {
-					if (unit->getType().isResourceDepot())
-						_data.newHatchery(unit);
-				} else
-					_data.allUnits.add(unit);
-			}
+			_data.newUnit(unit);
 		}
 		// Everything below this line is safe to modify.
 
