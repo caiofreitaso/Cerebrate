@@ -20,7 +20,7 @@ namespace Cerebrate {
 	typedef BWTA::BaseLocation* Base;
 	typedef std::vector<Base> Baseset;
 	typedef BWTA::Chokepoint* Choke;
-	typedef std::vector<Base> Chokeset;
+	typedef std::vector<Choke> Chokeset;
 
 
 	template<typename T>
@@ -44,56 +44,75 @@ namespace Cerebrate {
 	const BWAPI::UnitType Queen = BWAPI::UnitType(45);
 	const BWAPI::UnitType Defiler = BWAPI::UnitType(46);
 	const BWAPI::UnitType Ultra = BWAPI::UnitType(39);
+	const BWAPI::UnitType Guardian = BWAPI::UnitType(44);
+
+	const BWAPI::UnitType Hatch = BWAPI::UnitType(131);
+	const BWAPI::UnitType Lair = BWAPI::UnitType(132);
+	const BWAPI::UnitType Hive = BWAPI::UnitType(133);
+
+	const BWAPI::UnitType Extractor = BWAPI::UnitType(149);
+	
+	const BWAPI::UnitType Pool = BWAPI::UnitType(142);
+	const BWAPI::UnitType HydraDen = BWAPI::UnitType(135);
+	const BWAPI::UnitType Spire = BWAPI::UnitType(141);
+	const BWAPI::UnitType QueensNest = BWAPI::UnitType(138);
+	const BWAPI::UnitType DefilerMound = BWAPI::UnitType(136);
+	const BWAPI::UnitType GSpire = BWAPI::UnitType(137);
+
+	const BWAPI::UnitType EvoChamber = BWAPI::UnitType(139);
+
+	const BWAPI::UnitType CreepC = BWAPI::UnitType(143);
+	const BWAPI::UnitType Spore  = BWAPI::UnitType(144);
+	const BWAPI::UnitType Sunken = BWAPI::UnitType(146);
 	#pragma endregion
 
-	enum Role {
-		Civil,
-		Harass,
-		JackOfAllTrades,
-		Siege,
-		AntiAir,
-		AOE,
-		Detector,
-		Massable,
-		CrowdControl,
-		Tank
-	};
-	typedef std::vector<Role> Roles;
-	Roles getRoles(BWAPI::UnitType type) {
-		Roles ret;
-		switch(type.getID()) {
-			case 42:
-				ret.push_back(Detector);
-			case 36:
-			case 41:
-				ret.push_back(Civil);
-				break;
-			case 43:
-				ret.push_back(Harass);
-			case 37:
-				ret.push_back(Massable);
-				break;
-			case 38:
-				ret.push_back(JackOfAllTrades);
-				ret.push_back(Massable);
-				break;
-			case 103:
-				ret.push_back(Siege);
-			case 46:
-				ret.push_back(AOE);
-				ret.push_back(CrowdControl);
-				break;
-			case 45:
-				ret.push_back(CrowdControl);
-				break;
-			case 47:
-				ret.push_back(AntiAir);
-				break;
-			case 39:
-				ret.push_back(Tank);
-				break;
-		}
-		return ret;
+	namespace Types {
+		enum Role {
+			Civil,
+			Massable,
+			Harass,
+			AntiAir,
+			Siege,
+			AOE,
+			Air,
+			Caster,
+			Tank,
+
+			Unknown
+		};
+		const Role Ling_Roles[2] = { Massable, Harass };
+		const Role Hydra_Roles[2] = { Massable, AntiAir };
+		const Role Lurker_Roles[2] = { Siege, AOE };
+		const Role Muta_Roles[2] = { Air, Harass };
+		const Role Scourge_Roles[2] = { Air, AntiAir };
+		const Role Queen_Roles[2] = { Air, Caster };
+		const Role Ultra_Roles[2] = { Tank, Unknown };
+		const Role Defiler_Roles[2] = { AOE, Caster };
+		const Role Guardian_Roles[2] = { Air, Siege };
+
+		struct UnitType {
+			BWAPI::UnitType type;
+			Role roles[2];
+			unsigned tier;
+
+			UnitType(BWAPI::UnitType t, const Role r[], unsigned tr)
+			: type(t),tier(tr) {
+				roles[0] = r[0];
+				roles[1] = r[1];
+			}
+		};
+		
+		const UnitType units[] = {
+			UnitType(Ling,		Ling_Roles,		1),
+			UnitType(Hydra,		Hydra_Roles,	1),
+			UnitType(Lurker,	Lurker_Roles,	2),
+			UnitType(Muta,		Muta_Roles,		2),
+			UnitType(Scourge,	Scourge_Roles,	2),
+			UnitType(Queen,		Queen_Roles,	2),
+			UnitType(Ultra,		Ultra_Roles,	3),
+			UnitType(Guardian,	Guardian_Roles,	3),
+			UnitType(Defiler,	Defiler_Roles,	3)
+		};
 	}
 
 
@@ -109,11 +128,11 @@ namespace Cerebrate {
 				}
 		}
 
-		unsigned size() { return units.size(); }
+		unsigned size() const { return units.size(); }
 		Unit& operator[](unsigned index) { return units[index]; }
 		Unit const& operator[](unsigned index) const { return units[index]; }
 
-		Unitset getType(BWAPI::UnitType type) {
+		Unitset getType(BWAPI::UnitType type) const  {
 			Unitset ret;
 			for (unsigned i = 0; i < units.size(); i++)
 				if (units[i]->getType() == type)
@@ -121,7 +140,7 @@ namespace Cerebrate {
 			return ret;
 		}
 
-		unsigned eggsMorphing(BWAPI::UnitType type) {
+		unsigned eggsMorphing(BWAPI::UnitType type) const {
 			Unitset eggs = getType(type);
 			unsigned ret = 0;
 			for (unsigned i = 0; i < eggs.size(); i++)
@@ -129,7 +148,7 @@ namespace Cerebrate {
 					ret++;
 			return ret;
 		}
-		unsigned notCompleted(BWAPI::UnitType type) {
+		unsigned notCompleted(BWAPI::UnitType type) const {
 			unsigned ret = 0;
 			Unitset all = getType(type);
 			for (Unitset::iterator unit = all.begin(); unit != all.end(); unit++)
@@ -148,6 +167,80 @@ namespace Cerebrate {
 	};
 
 	namespace Macro {
+		struct Production_Test {
+			BWAPI::UnitType type;
+			BWAPI::TechType tech;
+			bool unit;
+			double priority;
+
+			Production_Test(BWAPI::UnitType t, double p) : type(t),unit(true),priority(p) { }
+			Production_Test(BWAPI::TechType t, double p) : tech(t),unit(false),priority(p) { }
+		};
+		bool compare_Test(Production_Test a, Production_Test b) { return a.priority > b.priority; }
+		
+		class ProductionQueue_Test {
+			std::vector<Production_Test> _data;
+			public:
+				void add(Production_Test p) { _data.push_back(p); std::sort(_data.begin(),_data.end(),compare_Test); }
+				
+				Production_Test& top() { return _data[0]; }
+				Production_Test const& top() const { return _data[0]; }
+
+				Production_Test& operator[](unsigned i) { return _data[i]; }
+				Production_Test const& operator[](unsigned i) const { return _data[i]; }
+
+				void pop() { _data.erase(_data.begin()); }
+
+				unsigned size() const { return _data.size(); }
+
+				void update(double priorityThreshold) {
+					if (_data.size())	
+						for (std::vector<Production_Test>::iterator i = _data.begin(); i != _data.end();) {
+							if (i->priority < priorityThreshold || i->type == Drone || i->type == Overlord) {
+								_data.erase(i);
+								i = _data.begin();
+							} else
+								i++;
+						}
+				}
+
+				void morph(Unitset larvae) {
+					unsigned size = larvae.size();
+					size = size < _data.size() ? size : _data.size();
+		
+					unsigned i = 0;
+					for (Unitset::iterator larva = larvae.begin(); larva != larvae.end() && i < size; larva++, i++) {
+						if ((*larva)->morph(top().type))
+							_data.erase(_data.begin());
+					}
+				}
+
+				void build(Unit drone, BWAPI::TilePosition position) { drone->build(position,top().unit); }
+
+				void research(UnitManager const& units) {
+					(*units.getType(top().tech.whatResearches()).begin())->research(top().tech);
+				}
+
+				Production_Test& overlord() {
+					unsigned i = 0;
+					for (; i < _data.size(); i++)
+						if (_data[i].unit)
+							if (_data[i].type == Overlord)
+								break;
+					return _data[i];
+				}
+				
+				Production_Test& hatchery() {
+					unsigned i = 0;
+					for (; i < _data.size(); i++)
+						if (_data[i].unit)
+							if (_data[i].type == Hatch)
+								break;
+					return _data[i];
+				}
+		};
+
+		
 		struct Production {
 			BWAPI::UnitType type;
 			double priority;
@@ -225,19 +318,102 @@ namespace Cerebrate {
 		};
 		//Need to build
 		namespace Infrastructure {
+			enum Ownership {
+				None,
+				Mine,
+				His
+			};
+			struct BaseCandidate {
+				Ownership owner;
+				Base base;
+				double distance;
+
+				BaseCandidate(Base b, Ownership o, double d):owner(o),base(b),distance(d) { }
+			};
+			bool compare(BaseCandidate a, BaseCandidate b) {
+				if (a.owner != b.owner)
+					if (a.owner == None)
+						return true;
+					else if (b.owner == None)
+						return false;
+					else if (a.owner == Mine)
+						return true;
+					else
+						return false;
+				else
+					return a.distance < b.distance;
+			}
+			class Baseset {
+				private:
+					std::vector<BaseCandidate> _data;
+					unsigned _mine;
+					unsigned _his;
+					
+					void sort() {
+						std::sort(_data.begin(),_data.end(),compare);
+						bool mine = false;
+						for (unsigned i = 0; i < _data.size(); i++)
+							if (mine) {
+								if (_data[i].owner == Mine) {
+									_mine = i;
+									mine = false;
+								}
+							} else {
+								if (_data[i].owner == His) {
+									_his = i;
+									break;
+								}
+							}
+					}
+				
+				public:
+					void getBases() {
+						for (std::set<Base>::const_iterator base = BWTA::getBaseLocations().begin(); base != BWTA::getBaseLocations().end(); base++)
+							_data.push_back(BaseCandidate(*base,None,(*base)->getGroundDistance(BWTA::getStartLocation(BWAPI::Broodwar->self()))));
+						sort();
+					}
+
+					BaseCandidate& main() { return _data[0]; }
+					BaseCandidate const& main() const { return _data[0]; }
+
+					bool empty() const { return _data.empty(); }
+
+					unsigned size() const { return _data.size(); }
+					unsigned mine() const { return _mine; }
+					unsigned his() const { return _his; }
+
+					BaseCandidate& operator[](unsigned i) { return _data[i]; }
+					BaseCandidate const& operator[](unsigned i) const { return _data[i]; }
+
+					void enemySighted(BWAPI::Position where) {
+						unsigned i = 0;
+						for (; i < size(); i++)
+							if (_data[i].base->getPosition().getDistance(where) < 150) {
+								_data[i].owner = His;
+								sort();
+								return;
+							}
+					}
+					void expanded(BWAPI::Position where) {
+						unsigned i = 0;
+						for (; i < size(); i++)
+							if (_data[i].base->getPosition().getDistance(where) < 150) {
+								_data[i].owner = Mine;
+								sort();
+								return;
+							}
+					}
+			};
+
 			struct Builder {
 				Unitset hatcheries;
 				Unitset techBuildings;
 
-				Baseset basesTaken;
+				Baseset bases;
 
-				ProductionQueue buildQueue;
-
-				double expand;
-
-				Unitset getLarva() {
+				Unitset getLarva() const {
 					Unitset ret;
-					for (Unitset::iterator hatch = hatcheries.begin(); hatch != hatcheries.end(); hatch++) {
+					for (Unitset::const_iterator hatch = hatcheries.begin(); hatch != hatcheries.end(); hatch++) {
 						std::set<Unit> larvae = (*hatch)->getLarva();
 						for (std::set<Unit>::iterator larva = larvae.begin(); larva != larvae.end(); larva++)
 							ret.push_back(*larva);
@@ -245,8 +421,8 @@ namespace Cerebrate {
 					return ret;
 				}
 
-				Unit getNearestHatch(BWAPI::Position where) {
-					Unitset::iterator hatch = hatcheries.begin();
+				Unit getNearestHatch(BWAPI::Position where) const {
+					Unitset::const_iterator hatch = hatcheries.begin();
 					
 					double distance = where.getDistance((*hatch)->getPosition());
 					Unit ret = *hatch;
@@ -262,7 +438,7 @@ namespace Cerebrate {
 
 					return ret;
 				}
-				unsigned getNearestHatchIndex(BWAPI::Position where) {
+				unsigned getNearestHatchIndex(BWAPI::Position where) const {
 					double distance = where.getDistance(hatcheries[0]->getPosition());
 					unsigned ret = 0, i = 0;
 					
@@ -276,6 +452,12 @@ namespace Cerebrate {
 
 					return ret;
 				}
+
+				void addHatch(Unit hatch) {
+					hatcheries.insert(hatcheries.begin(),hatch);
+					bases.expanded(hatch->getPosition());
+				}
+
 			};
 		};
 		//Need for resources
@@ -363,8 +545,10 @@ namespace Cerebrate {
 										miners[i][j].drone->gather(patches[i]);
 										mining[i] = true;
 										miners[i][j].state = Mining;
-									} else
-										miners[i][j].drone->follow(patches[i]);
+										} else if (miners[i][j].drone->getOrder() != BWAPI::Orders::MoveToMinerals && miners[i][j].drone->getOrder() != BWAPI::Orders::HoldPosition) {
+										miners[i][j].drone->gather(patches[i]);
+										miners[i][j].drone->holdPosition(true);
+									}
 									break;
 								case Mining:
 									if (miners[i][j].drone->isCarryingMinerals()) {
@@ -383,7 +567,7 @@ namespace Cerebrate {
 
 				Unit getBestMineral() {
 					Unitset candidates;
-					unsigned minSize = 4;
+					unsigned minSize = 3;
 					for (unsigned i = 0; i < miners.size(); i++)
 						if (miners[i].size() < minSize)
 							minSize = miners[i].size();
@@ -407,24 +591,30 @@ namespace Cerebrate {
 						return 0;
 				}
 				Unit getDrone() {
-					std::vector<unsigned> candidates;
-					for (unsigned i = 0; i < miners.size(); i++)
-						if (miners[i].size() > 0)
-							for (unsigned j = 0; j < candidates.size(); j++)
-								if (hatch.getDistance(patches[i]->getPosition()) < hatch.getDistance(patches[j]->getPosition())) {
-									candidates.insert(candidates.begin()+j,i);
-									break;
-								}
+					Minerset candidates;
+					unsigned x,y;
 
-					if (candidates.size())
-						for (unsigned i = 0; i < candidates.size(); i++)
-							for(unsigned j = 0; j < miners[candidates[i]].size(); j++)
-								if (miners[candidates[i]][j].state != Mining) {
-									Unit ret = miners[candidates[i]][j].drone;
-									miners[candidates[i]].erase(miners[candidates[i]].begin()+j);
-									return ret;
+					for (unsigned i = 0; i < miners.size(); i++)
+						for (unsigned j = 0; j < miners[i].size(); j++)
+							if (!miners[i][j].drone->isCarryingMinerals()) {
+								unsigned k = 0;
+								for (; k < candidates.size(); k++)
+									if ((miners[i][j].state == candidates[k].state && miners[i][j].drone->getPosition().getDistance(hatch) < candidates[k].drone->getPosition().getDistance(hatch)) ||
+										miners[i][j].state == Idle ||
+										(miners[i][j].state == Waiting && candidates[k].state == Mining))
+										break;
+								candidates.insert(candidates.begin()+k, miners[i][j]);
+								if (!k) {
+									x = i;
+									y = j;
 								}
-					else
+							}
+					if (candidates.size()) {
+						miners[x].erase(miners[x].begin()+y);
+						if (candidates[0].state == Mining)
+							mining[x] = false;
+						return candidates[0].drone;
+					} else
 						return 0;
 				}
 			};
@@ -481,18 +671,19 @@ namespace Cerebrate {
 				}
 
 
-				void idleWorker(Unit unit) {
+				void idleWorker(Unit unit, Infrastructure::Builder& builder) {
 					#ifndef NORMAL_MINING
 					if (!has(getAllMiners(),unit))
 					#endif
 					{
 						Unit mineral = 0;
 						unsigned i = 0;
-						for (; i < minerals.size(); i++) {
-							mineral = minerals[i].getBestMineral();
-							if (mineral)
-								break;
-						}
+						for (; i < minerals.size(); i++)
+							if (builder.hatcheries[i]->isCompleted()) {
+								mineral = minerals[i].getBestMineral();
+								if (mineral)
+									break;
+							}
 						#ifdef NORMAL_MINING
 						unit->gather(mineral);
 						#else
@@ -558,22 +749,16 @@ namespace Cerebrate {
 				double drones;
 				double overlords;
 
-				void needForOverlords(Infrastructure::Builder& builder, UnitManager units, Player p) {
-					unsigned i = 0;
-					for (; i < unitQueue.size(); i++)
-						if (unitQueue[i].type == Overlord)
-							break;
-					if (i < unitQueue.size())
+				void needForOverlords(Infrastructure::Builder const& builder, UnitManager const& units, Player p) {
+					if (units.eggsMorphing(Overlord) != 0 || units.notCompleted(Overlord) != 0) {
 						overlords = 0;
-					else if (units.eggsMorphing(Overlord) != 0 || units.notCompleted(Overlord) != 0)
-						overlords = 0;
-					else {
+					} else {
 						int extraSupply = 0;
 						unsigned larvaCount = builder.getLarva().size();
 
 						unsigned maxIndex = larvaCount < unitQueue.size() ? larvaCount : unitQueue.size();
 
-						for (i = 0; i < maxIndex; i++)
+						for (unsigned i = 0; i < maxIndex; i++)
 							if (!unitQueue[i].type.isWorker())
 								extraSupply += unitQueue[i].type.supplyRequired();
 
@@ -583,9 +768,9 @@ namespace Cerebrate {
 							overlords = supply_diff(p, p->supplyUsed());
 					}
 				}
-				void needForDrones(Infrastructure::Builder& builder, Economy::Economist& economist) {
-					double	incomePerHatch = economist.income[0].mineral/builder.hatcheries.size();
-					double	nope = 9*incomePerHatch*incomePerHatch;
+				void needForDrones(Infrastructure::Builder const& builder, Economy::Economist const& economist) {
+					double	incomePerHatch = economist.income[0].mineral/(builder.hatcheries.size()+1);
+					double	nope = 7*incomePerHatch*incomePerHatch;
 					if (nope > 1)
 						nope = 1;
 					drones = 1 - nope;
@@ -596,8 +781,7 @@ namespace Cerebrate {
 				void clean(double priorityThreshold, UnitManager units) {
 					if (unitQueue.size())
 						for (ProductionQueue::iterator i = unitQueue.begin(); i != unitQueue.end();) {
-							if (i->priority < priorityThreshold || i->type == Drone ||
-								(i->type == Overlord && (units.eggsMorphing(Overlord) != 0 || units.notCompleted(Overlord) != 0))) {
+							if (i->priority < priorityThreshold || i->type == Drone || i->type == Overlord) {
 								unitQueue.erase(i);
 								i = unitQueue.begin();
 							} else
@@ -605,10 +789,10 @@ namespace Cerebrate {
 						}
 				}
 				void queueCivil(double droneThreshold, double overlordThreshold) {
-					if (drones >= droneThreshold)
+					//if (drones >= droneThreshold)
 						unitQueue.push_back(Production(Drone,drones));
-					if (overlords >= overlordThreshold)
-						unitQueue.push_back(Production(Overlord,overlords));
+					//if (overlords >= overlordThreshold)
+					//	unitQueue.push_back(Production(Overlord,overlords));
 					std::sort(unitQueue.begin(), unitQueue.end(), compare);
 				}
 
@@ -695,10 +879,11 @@ namespace Cerebrate {
 			#pragma region Set Broodwar commands
 			BWAPI::Broodwar->enableFlag(BWAPI::Flag::UserInput);
 			BWAPI::Broodwar->setCommandOptimizationLevel(2);
-			//BWAPI::Broodwar->setLocalSpeed(0);
+			BWAPI::Broodwar->setLocalSpeed(20);
 			if (!debug)
 				BWAPI::Broodwar->setGUI(false);
 			player = BWAPI::Broodwar->self();
+			//publicWorks.basesTaken.push_back(BWTA::getStartLocation(player));
 			#pragma endregion
 			
 			#ifdef SAVE_CSV
@@ -713,22 +898,19 @@ namespace Cerebrate {
 		void update() {
 			finances.update(player, BWAPI::Broodwar->getFrameCount());
 			#ifdef SAVE_CSV
-			file << player->gatheredMinerals() - 50 << "\n";
+			file << player->gatheredMinerals() - 50 << "," << BWAPI::Broodwar->getAPM() << "\n";
 			#endif
+			mines.update();
 			industry.needForDrones(publicWorks, finances);
 			industry.needForOverlords(publicWorks, allUnits, player);
 		}
 		void act() {
-			if (BWAPI::Broodwar->isReplay() || !BWAPI::Broodwar->getFrameCount())
-				return;
-
-			if (debug)
-				draw();
-
-			if (BWAPI::Broodwar->isPaused() || !BWAPI::Broodwar->self())
+			if (BWAPI::Broodwar->isReplay() || !BWAPI::Broodwar->getFrameCount() || BWAPI::Broodwar->isPaused() || !BWAPI::Broodwar->self())
 				return;
 
 			update();
+			if (debug)
+				draw();
 		
 			if (BWAPI::Broodwar->getFrameCount() % BWAPI::Broodwar->getLatencyFrames() != 0)
 				return;
@@ -746,7 +928,7 @@ namespace Cerebrate {
 
 				if ((*u)->isIdle()) {
 					if ((*u)->getType().isWorker())
-						mines.idleWorker(*u);
+						mines.idleWorker(*u,publicWorks);
 					else {
 					}
 				}
@@ -798,7 +980,7 @@ namespace Cerebrate {
 			}
 			#pragma endregion
 
-			for (i = 0; i < publicWorks.basesTaken.size(); i++) {
+			/*for (i = 0; i < publicWorks.basesTaken.size(); i++) {
 				BWTA::Region* base = publicWorks.basesTaken[i]->getRegion();
 				BWTA::Polygon drawing = base->getPolygon();
 
@@ -806,20 +988,39 @@ namespace Cerebrate {
 					BWAPI::Broodwar->drawLineMap(drawing[0].x(), drawing[0].y(), drawing[drawing.size()-1].x(), drawing[drawing.size()-1].y(), BWAPI::Colors::Purple);
 					for (unsigned j = 0; j < drawing.size()-1; j++)
 						BWAPI::Broodwar->drawLineMap(drawing[j].x(), drawing[j].y(), drawing[j+1].x(), drawing[j+1].y(), BWAPI::Colors::Purple);
-				}
+				
 
-				std::set<Choke> chokes = base->getChokepoints();
-				for (std::set<Choke>::iterator c = chokes.begin(); c != chokes.end(); c++)
-					BWAPI::Broodwar->drawEllipseMap((*c)->getCenter().x(), (*c)->getCenter().y(), (*c)->getWidth(), (*c)->getWidth(), BWAPI::Colors::Red);
+					std::set<Choke> chokes = base->getChokepoints();
+					for (std::set<Choke>::iterator c = chokes.begin(); c != chokes.end(); c++)
+						BWAPI::Broodwar->drawEllipseMap((*c)->getCenter().x(), (*c)->getCenter().y(), (*c)->getWidth(), (*c)->getWidth(), BWAPI::Colors::Red);
+				}
+			}*/
+
+			for (i = 0; i < publicWorks.bases.size(); i++) {
+				BWAPI::Position position = publicWorks.bases[i].base->getPosition();
+				BWAPI::Broodwar->drawTextMap(position.x(), position.y(), "[%d] %.0f", i, publicWorks.bases[i].distance);
+				BWAPI::Color color;
+				switch(publicWorks.bases[i].owner) {
+					case Macro::Infrastructure::None:
+						color = BWAPI::Colors::Brown;
+						break;
+					case Macro::Infrastructure::Mine:
+						color = BWAPI::Colors::Blue;
+						break;
+					case Macro::Infrastructure::His:
+						color = BWAPI::Colors::Red;
+						break;
+				}
+				BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),70,color);
 			}
 
 			#pragma region Text
 			BWAPI::Broodwar->drawTextScreen(300, 0, "FPS: %0d", BWAPI::Broodwar->getFPS());
 			BWAPI::Broodwar->setTextSize(0);
 			BWAPI::Broodwar->drawTextScreen(305, 16, "APM: %d", BWAPI::Broodwar->getAPM());
-			BWAPI::Broodwar->drawTextScreen(5, 0, "Income: %f/%f %d", finances.income[0].mineral, finances.income[0].gas, finances.income[0].frame);
+			BWAPI::Broodwar->drawTextScreen(5, 0, "Income: %.3f/.3%f %d", finances.income[0].mineral, finances.income[0].gas, finances.income[0].frame);
 			BWAPI::Broodwar->drawTextScreen(5, 10, "HATCHERIES: %d, %d", publicWorks.hatcheries.size(), mines.minerals.size());
-			BWAPI::Broodwar->drawTextScreen(5, 20, "Need for a) drones: %f\tb) overlords: %f", industry.drones, industry.overlords);
+			BWAPI::Broodwar->drawTextScreen(5, 20, "Need for a) drones: %.3f (%+.0f)\tb) overlords: %.3f", industry.drones, (0.25/(finances.income[0].mineral/publicWorks.hatcheries.size()) - 1)*allUnits.getType(Drone).size(), industry.overlords);
 			BWAPI::Broodwar->drawTextScreen(5, 30, "Building a) drones: %d [%d]\tb) overlords: %d [%d]",
 				allUnits.eggsMorphing(Drone),allUnits.notCompleted(Drone),
 				allUnits.eggsMorphing(Overlord),allUnits.notCompleted(Overlord));
@@ -871,7 +1072,7 @@ namespace Cerebrate {
 
 		
 		void newHatchery(Unit hatch) {
-			publicWorks.hatcheries.insert(publicWorks.hatcheries.begin(), hatch);
+			publicWorks.addHatch(hatch);
 			mines.add(hatch);
 		}
 		void removeHatchery(Unit hatch) {
@@ -903,13 +1104,24 @@ namespace Cerebrate {
 					allUnits.add(unit);
 			}
 		}
+		void morphUnit(Unit unit) {
+			if (unit->getPlayer() == player)
+				if (unit->getType().isBuilding()) {
+					allUnits.remove(unit);
+					if (unit->getType().isResourceDepot())
+						newHatchery(unit);
+				}
+		}
 	
 		static DWORD WINAPI analyzeThread(LPVOID pointer) {
 			BWTA::analyze();
 			Cerebrate* target = (Cerebrate*) pointer;
 
-			if (BWTA::getStartLocation(BWAPI::Broodwar->self()) != 0)
-				target->publicWorks.basesTaken.push_back(BWTA::getStartLocation(BWAPI::Broodwar->self()));
+			if (BWTA::getStartLocation(BWAPI::Broodwar->self()) != 0) {
+				target->publicWorks.bases.getBases();
+				for (unsigned i = 0; i < target->publicWorks.hatcheries.size(); i++)
+					target->publicWorks.bases.expanded(target->publicWorks.hatcheries[i]->getPosition());
+			}
 			return 0;
 		}
 	};
@@ -928,7 +1140,13 @@ namespace Cerebrate {
 		virtual void onFrame() {
 			_data.act();
 		}
-		virtual void onSendText(std::string text) { }
+		virtual void onSendText(std::string text) {
+			if (!text.compare("expand")) {
+				Base next = _data.publicWorks.bases[0].base;
+				Unit myDrone = _data.mines.getDrone(next->getPosition());
+				myDrone->build(next->getTilePosition(), Hatch);
+			}
+		}
 		virtual void onReceiveText(BWAPI::Player* player, std::string text) { }
 		virtual void onPlayerLeft(BWAPI::Player* player) { }
 		virtual void onNukeDetect(BWAPI::Position target) { }
@@ -940,7 +1158,9 @@ namespace Cerebrate {
 		virtual void onUnitDestroy(BWAPI::Unit* unit) {
 			_data.deleteUnit(unit);
 		}
-		virtual void onUnitMorph(BWAPI::Unit* unit) { }
+		virtual void onUnitMorph(BWAPI::Unit* unit) {
+			_data.morphUnit(unit);
+		}
 		virtual void onUnitRenegade(BWAPI::Unit* unit) { }
 		virtual void onSaveGame(std::string gameName) { }
 		virtual void onUnitComplete(BWAPI::Unit *unit) {
