@@ -258,8 +258,9 @@ namespace Cerebrate {
 				double gas;
 				
 				int frame;
+				unsigned droneCount;
 
-				Resource() : mineral(0), gas(0), frame(0) { }
+				Resource() : mineral(0), gas(0), frame(0), droneCount(0) { }
 			};
 			struct Economist {
 				static const int SIZE = 200;
@@ -267,7 +268,7 @@ namespace Cerebrate {
 				Resource income[SIZE];
 				Resource incomeGrowth;
 
-				void update(Player player, int frame) {
+				void update(Player player, int frame, unsigned droneCount) {
 					int i;
 					if (frame - states[0].frame >= 20) {
 
@@ -276,16 +277,19 @@ namespace Cerebrate {
 							states[i].mineral = states[i-1].mineral;
 							states[i].gas = states[i-1].gas;
 							states[i].frame = states[i-1].frame;
+							states[i].droneCount = states[i-1].droneCount;
 						}
 
 						states[0].mineral = player->gatheredMinerals() - 50;
 						states[0].gas = player->gatheredGas();
 						states[0].frame = frame;
+						states[0].droneCount = droneCount;
 
 						for (i = SIZE-1; i > 0; i--) {
 							income[i].mineral = income[i-1].mineral;
 							income[i].gas = income[i-1].gas;
 							income[i].frame = income[i-1].frame;
+							income[i].droneCount = income[i-1].droneCount;
 						}
 
 						income[0] = Resource();
@@ -296,6 +300,7 @@ namespace Cerebrate {
 						income[0].mineral = (states[0].mineral - states[i].mineral) / (frame - states[i].frame);
 						income[0].gas = (states[0].gas - states[i].gas) / (frame - states[i].frame);
 						income[0].frame = frame;
+						income[0].droneCount = droneCount;
 			
 						incomeGrowth = Resource();
 						incomeGrowth.mineral = (income[0].mineral - income[1].mineral) / (frame - income[1].frame);
@@ -323,94 +328,231 @@ namespace Cerebrate {
 				Mine,
 				His
 			};
-			struct BaseCandidate {
+			
+			struct BaseInfo {
 				Ownership owner;
+				std::vector< std::pair<Unit,int> > patches;
+				int gas;
 				Base base;
-				double distance;
-
-				BaseCandidate(Base b, Ownership o, double d):owner(o),base(b),distance(d) { }
+				int minerals() const {
+					int r = 0;
+					for (unsigned i = 0; i < patches.size(); i++)
+						r += patches[i].second;
+					return r;
+				}
 			};
-			bool compare(BaseCandidate a, BaseCandidate b) {
-				if (a.owner != b.owner)
-					if (a.owner == None)
-						return true;
-					else if (b.owner == None)
-						return false;
-					else if (a.owner == Mine)
-						return true;
-					else
-						return false;
-				else
-					return a.distance < b.distance;
-			}
-			class Baseset {
-				private:
-					std::vector<BaseCandidate> _data;
-					unsigned _mine;
-					unsigned _his;
-					
-					void sort() {
-						std::sort(_data.begin(),_data.end(),compare);
-						bool mine = false;
-						for (unsigned i = 0; i < _data.size(); i++)
-							if (mine) {
-								if (_data[i].owner == Mine) {
-									_mine = i;
-									mine = false;
-								}
-							} else {
-								if (_data[i].owner == His) {
-									_his = i;
-									break;
-								}
-							}
-					}
+
+			struct Location {
+				BaseInfo* info;
+				std::vector<BaseInfo*> bases;
+				std::vector<double> ground;
+				std::vector<double> potential;
 				
-				public:
-					void getBases() {
-						for (std::set<Base>::const_iterator base = BWTA::getBaseLocations().begin(); base != BWTA::getBaseLocations().end(); base++)
-							_data.push_back(BaseCandidate(*base,None,(*base)->getGroundDistance(BWTA::getStartLocation(BWAPI::Broodwar->self()))));
-						sort();
-					}
-
-					BaseCandidate& main() { return _data[0]; }
-					BaseCandidate const& main() const { return _data[0]; }
-
-					bool empty() const { return _data.empty(); }
-
-					unsigned size() const { return _data.size(); }
-					unsigned mine() const { return _mine; }
-					unsigned his() const { return _his; }
-
-					BaseCandidate& operator[](unsigned i) { return _data[i]; }
-					BaseCandidate const& operator[](unsigned i) const { return _data[i]; }
-
-					void enemySighted(BWAPI::Position where) {
-						unsigned i = 0;
-						for (; i < size(); i++)
-							if (_data[i].base->getPosition().getDistance(where) < 150) {
-								_data[i].owner = His;
-								sort();
-								return;
-							}
-					}
-					void expanded(BWAPI::Position where) {
-						unsigned i = 0;
-						for (; i < size(); i++)
-							if (_data[i].base->getPosition().getDistance(where) < 150) {
-								_data[i].owner = Mine;
-								sort();
-								return;
-							}
-					}
+				virtual void addBase(BaseInfo* b) {
+					double distance = b->base->getGroundDistance(info->base);
+					unsigned i = 0;
+					for (; i < ground.size(); i++)
+						if (ground[i] > distance)
+							break;
+					
+					bases.insert(bases.begin()+i, b);
+					ground.insert(ground.begin()+i, distance);
+					potential.push_back(1);
+				}
+				
+				bool compare(unsigned i, unsigned j) {
+					if (bases[i]->owner != bases[j]->owner)
+						if (bases[i]->owner == None)
+							return true;
+						else if (bases[j]->owner == None)
+							return false;
+						else if (bases[j]->owner == Mine)
+							return true;
+						else
+							return false;
+					else
+						return potential[i] > potential[j];
+				}
+				
+				virtual void sort() {
+					for (unsigned i = 1; i < bases.size(); i++)
+						for (unsigned j = i; j > 0 && compare(j,j-1); j--) {
+							std::swap(bases[j], bases[j-1]);
+							std::swap(ground[j], ground[j-1]);
+							std::swap(potential[j], potential[j-1]);
+						}
+				}
 			};
+
+			struct StartLocation : Location {
+				std::vector<double> air;
+				Location natural;
+				
+				virtual void addBase(BaseInfo* b) {
+					double distance = b->base->getGroundDistance(info->base);
+					unsigned i = 0;
+					for (; i < ground.size(); i++)
+						if (ground[i] > distance)
+							break;
+					
+					bases.insert(bases.begin()+i, b);
+					ground.insert(ground.begin()+i, distance);
+					air.insert(air.begin()+i, b->base->getAirDistance(info->base));
+					potential.push_back(1);					
+				}
+				
+				virtual void sort() {
+					for (unsigned i = 1; i < bases.size(); i++)
+						for (unsigned j = i; j > 0 && compare(j,j-1); j--) {
+							std::swap(bases[j], bases[j-1]);
+							std::swap(ground[j], ground[j-1]);
+							std::swap(potential[j], potential[j-1]);
+							std::swap(air[j], air[j-1]);
+						}
+				}
+			};
+
+			struct BaseGraph {
+				std::vector<BaseInfo> bases;
+				std::vector<StartLocation> startLocations;
+				unsigned selfIndex;
+				unsigned enemyIndex;
+
+				Base main() const { return startLocations[selfIndex].info->base; }
+				StartLocation const& self() const { return startLocations[selfIndex]; }
+				Base enemyMain() const { return startLocations[enemyIndex].info->base; }
+				StartLocation const& enemy() const { return startLocations[enemyIndex]; }
+				
+				bool enemyKnown() const { return enemyIndex < startLocations.size(); }
+				
+				void expanded(BWAPI::Position where) {
+					for (unsigned i = 0; i < bases.size(); i++)
+						if (where == bases[i].base->getPosition()) {
+							bases[i].owner = Mine;
+							return;
+						}
+				}
+				void enemySighted(BWAPI::Position where) {
+					for (unsigned i = 0; i < bases.size(); i++)
+						if (where == bases[i].base->getPosition()) {
+							bases[i].owner = His;
+							break;
+						}
+					if (!enemyKnown())
+						for (unsigned i = 0; i < startLocations.size(); i++)
+							if (startLocations[i].info->owner == His) {
+								enemyIndex = i;
+								return;
+							}
+				}
+
+				void populate() {
+					bases.reserve(BWTA::getBaseLocations().size());
+					for (std::set<Base>::const_iterator base = BWTA::getBaseLocations().begin(); base != BWTA::getBaseLocations().end(); base++) {
+						bases.push_back(BaseInfo());
+						bases[bases.size()-1].base = *base;
+						for (std::set<Unit>::const_iterator i = (*base)->getStaticMinerals().begin(); i != (*base)->getStaticMinerals().end(); i++)
+							bases[bases.size()-1].patches.push_back(std::pair<Unit,int>(*i,1500));
+						bases[bases.size()-1].owner = None;
+						bases[bases.size()-1].gas = (*base)->isMineralOnly() ? 0 : 5000;
+					}
+					for (unsigned i = 0; i < bases.size(); i++)
+						if (bases[i].base->isStartLocation()) {
+							startLocations.push_back(StartLocation());
+							startLocations[startLocations.size()-1].info = &bases[i];
+							
+							for (unsigned j = 0; j < bases.size(); j++)
+								if (bases[j].base->isStartLocation() && i != j)
+									startLocations[startLocations.size()-1].addBase(&bases[j]);
+							
+							double distance = 1e37;
+							for (unsigned j = 0; j < bases.size(); j++)
+								if (!bases[j].base->isStartLocation() && !bases[j].base->isIsland()) {
+									double thisDistance = bases[j].base->getGroundDistance(bases[i].base);
+									if (thisDistance < distance) {
+										distance = thisDistance;
+										startLocations[startLocations.size()-1].natural.info = &bases[j];
+									}
+								}
+							
+							for (unsigned j = 0; j < bases.size(); j++)
+								if (j != i && &bases[j] != startLocations[startLocations.size()-1].natural.info)
+									startLocations[startLocations.size()-1].natural.addBase(&bases[j]);
+						}
+					selfIndex = enemyIndex = startLocations.size();
+				}
+				
+				void update() {
+					std::stringstream tmp;
+					tmp.setf(std::ios::fixed);
+					tmp.precision(2);
+					for (unsigned i = 0; i < self().natural.bases.size(); i++) {						
+						double nearMe, farFromHim;
+						double minerals, patches;
+						double gas;
+						
+						for (unsigned j = 0; j < self().natural.bases[i]->patches.size(); j++)
+							if (self().natural.bases[i]->patches[j].first->isVisible())
+								self().natural.bases[i]->patches[j].second = self().natural.bases[i]->patches[j].first->getResources();
+							
+						for (std::set<Unit>::const_iterator j = self().natural.bases[i]->base->getGeysers().begin(); j != self().natural.bases[i]->base->getGeysers().end(); j++)
+							if ((*j)->isVisible())
+								self().natural.bases[i]->gas = (*j)->getResources();
+						
+						if (startLocations[selfIndex].natural.bases[i]->base->isIsland()) {
+							nearMe = 0;
+							farFromHim = 1;
+						} else {
+							nearMe = 1-((1-exp(-3*(startLocations[selfIndex].natural.ground[i]/1000-2)))/(1+exp(-3*(startLocations[selfIndex].natural.ground[i]/1000-2))) + 1)/2; //min(1,max(0,-(startLocations[selfIndex].natural.ground[i]/1000)+3));
+							farFromHim = 1;
+							if (enemyKnown()) {
+								unsigned j = 0;
+								for (; j < startLocations[enemyIndex].natural.bases.size(); j++)
+									if (startLocations[enemyIndex].natural.bases[j] == startLocations[selfIndex].natural.bases[i])
+										break;
+								
+								if (j == startLocations[enemyIndex].natural.bases.size())
+									farFromHim = 0;
+								else
+									farFromHim = ((1-exp(-3*(startLocations[enemyIndex].natural.ground[j]/1000-2)))/(1+exp(-3*(startLocations[enemyIndex].natural.ground[j]/1000-2))) + 1)/2;//1-min(1,max(0,-(startLocations[enemyIndex].natural.ground[j]/1000)+3));
+							}
+						}
+							
+						
+						double aux = 0;
+						
+						aux = startLocations[selfIndex].natural.bases[i]->base->getStaticMinerals().size();
+						patches = ((1-exp(-aux+5))/(1+exp(-aux+5)) + 1)/2;
+							
+						aux = startLocations[selfIndex].natural.bases[i]->minerals();
+						aux /= 1000;
+						minerals = ((1-exp(.6*(-aux+6)))/(1+exp(.6*(-aux+6))) + 1)/2;
+						
+						aux = startLocations[selfIndex].natural.bases[i]->gas;
+						aux /= 10000;
+						gas = aux + 0.5;
+						
+						tmp.str("");
+						tmp << (startLocations[selfIndex].natural.bases[i]->owner == His ? "\x08" : "") <<  "[" << i << "]\tnearMe:" << nearMe << "\tfarFromHim:" << farFromHim << "\tminerals:" << minerals << "\tpatches:" << patches;
+						BWAPI::Broodwar->drawTextScreen(340,25+i*9,tmp.str().c_str());
+						tmp.flush();
+						
+						startLocations[selfIndex].natural.potential[i] = (nearMe*nearMe * farFromHim) * (minerals * patches*patches*patches * gas);
+					}
+					
+					startLocations[selfIndex].natural.sort();					
+				}
+			};
+
 
 			struct Builder {
 				Unitset hatcheries;
 				Unitset techBuildings;
 
-				Baseset bases;
+				BaseGraph* allBases;
 
+				Builder():allBases(0) { }
+				
 				Unitset getLarva() const {
 					Unitset ret;
 					for (Unitset::const_iterator hatch = hatcheries.begin(); hatch != hatcheries.end(); hatch++) {
@@ -455,7 +597,8 @@ namespace Cerebrate {
 
 				void addHatch(Unit hatch) {
 					hatcheries.insert(hatcheries.begin(),hatch);
-					bases.expanded(hatch->getPosition());
+					if (allBases)
+						allBases->expanded(hatch->getPosition());
 				}
 
 			};
@@ -545,7 +688,7 @@ namespace Cerebrate {
 										miners[i][j].drone->gather(patches[i]);
 										mining[i] = true;
 										miners[i][j].state = Mining;
-										} else if (miners[i][j].drone->getOrder() != BWAPI::Orders::MoveToMinerals && miners[i][j].drone->getOrder() != BWAPI::Orders::HoldPosition) {
+									} else if (miners[i][j].drone->getOrder() != BWAPI::Orders::HoldPosition) {
 										miners[i][j].drone->gather(patches[i]);
 										miners[i][j].drone->holdPosition(true);
 									}
@@ -619,9 +762,6 @@ namespace Cerebrate {
 				}
 			};
 
-			//typedef std::vector<Mineral> Mineralset;
-
-			#pragma region Functions
 			Unitset nearbyMinerals(Unit hatch) {
 				Unitset ret;
 				std::set<Unit> units = hatch->getUnitsInRadius(300);
@@ -630,9 +770,6 @@ namespace Cerebrate {
 						ret.push_back(*i);
 				return ret;
 			}
-
-			#pragma endregion
-
 
 			struct Miner {
 				std::vector<Unitset> dronesPerExtrator;
@@ -850,7 +987,7 @@ namespace Cerebrate {
 		Macro::Technology::Scientist	science;
 		Macro::Defense::General			defense;
 
-		bool debug;
+		bool debug, makeDrones;
 		#ifdef SAVE_CSV
 		std::ofstream file;
 		#endif
@@ -864,7 +1001,7 @@ namespace Cerebrate {
 			Thresholds() : drones(.25),overlords(.75),priority(.5) { }
 		} thresholds;
 
-		Cerebrate(bool debug = true) : player(0),debug(debug) { }
+		Cerebrate(bool debug = true) : player(0),debug(debug),makeDrones(true) { }
 		~Cerebrate() {
 			#ifdef SAVE_CSV
 			file.close();
@@ -883,7 +1020,6 @@ namespace Cerebrate {
 			if (!debug)
 				BWAPI::Broodwar->setGUI(false);
 			player = BWAPI::Broodwar->self();
-			//publicWorks.basesTaken.push_back(BWTA::getStartLocation(player));
 			#pragma endregion
 			
 			#ifdef SAVE_CSV
@@ -896,27 +1032,34 @@ namespace Cerebrate {
 		}
 
 		void update() {
-			finances.update(player, BWAPI::Broodwar->getFrameCount());
+			finances.update(player, BWAPI::Broodwar->getFrameCount(), allUnits.getType(Drone).size());
 			#ifdef SAVE_CSV
 			file << player->gatheredMinerals() - 50 << "," << BWAPI::Broodwar->getAPM() << "\n";
 			#endif
 			mines.update();
 			industry.needForDrones(publicWorks, finances);
 			industry.needForOverlords(publicWorks, allUnits, player);
+			if (publicWorks.allBases)
+				publicWorks.allBases->update();
 		}
 		void act() {
-			if (BWAPI::Broodwar->isReplay() || !BWAPI::Broodwar->getFrameCount() || BWAPI::Broodwar->isPaused() || !BWAPI::Broodwar->self())
+			if (BWAPI::Broodwar->isReplay() || !BWAPI::Broodwar->getFrameCount())
 				return;
 
-			update();
 			if (debug)
 				draw();
-		
+
+			if (BWAPI::Broodwar->isPaused() || !BWAPI::Broodwar->self())
+				return;
+			
+			update();
+
 			if (BWAPI::Broodwar->getFrameCount() % BWAPI::Broodwar->getLatencyFrames() != 0)
 				return;
 
 			industry.clean(thresholds.priority, allUnits);
-			industry.queueCivil(thresholds.drones, thresholds.overlords);
+			if (makeDrones)
+				industry.queueCivil(thresholds.drones, thresholds.overlords);
 
 			industry.morph(publicWorks);
 
@@ -937,8 +1080,84 @@ namespace Cerebrate {
 		void draw() {
 			unsigned i = 0;
 
+			#pragma region Bases
+			BWAPI::Broodwar->setTextSize(0);
+			if (publicWorks.allBases) {
+				BWAPI::Position position = publicWorks.allBases->self().info->base->getPosition();
+				BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),68,BWAPI::Colors::Blue);
+				BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),70,BWAPI::Colors::Green);
+				BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),72,BWAPI::Colors::Blue);
+				
+				for (i = 0; i < publicWorks.allBases->self().bases.size(); i++) {
+					position = publicWorks.allBases->self().bases[i]->base->getPosition();
+					BWAPI::Broodwar->drawTextMap(position.x()-45, position.y()+27, "M.G:%.0f\nM.A:%.0f",publicWorks.allBases->self().ground[i],publicWorks.allBases->self().air[i]);
+				}
+				position = publicWorks.allBases->self().natural.info->base->getPosition();
+				BWAPI::Color color;
+				switch(publicWorks.allBases->self().natural.info->owner) {
+					case Macro::Infrastructure::None:
+						color = BWAPI::Colors::Brown;
+						break;
+					case Macro::Infrastructure::Mine:
+						color = BWAPI::Colors::Blue;
+						break;
+					case Macro::Infrastructure::His:
+						color = BWAPI::Colors::Red;
+						break;
+				}
+				BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),70,color);
+				BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),68,BWAPI::Colors::Yellow);
+				BWAPI::Broodwar->setTextSize(1);
+				std::set<Choke> chokes = publicWorks.allBases->self().natural.info->base->getRegion()->getChokepoints();
+				for (std::set<Choke>::const_iterator choke = chokes.begin(); choke != chokes.end(); choke++) {
+					BWAPI::Broodwar->drawLineMap((*choke)->getSides().first.x(), (*choke)->getSides().first.y(), (*choke)->getSides().second.x(),(*choke)->getSides().second.y(), BWAPI::Colors::Grey);
+					BWAPI::Broodwar->drawTextMap((*choke)->getCenter().x(), (*choke)->getCenter().y(), "\x1D%.0f",(*choke)->getWidth());
+					//BWAPI::Broodwar->drawCircleMap((*choke)->getCenter().x(), (*choke)->getCenter().y(), (*choke)->getWidth()/2, BWAPI::Colors::Grey);
+				}
+				
+				for (i = 0; i < publicWorks.allBases->self().natural.bases.size(); i++) {
+					BWAPI::Broodwar->setTextSize(0);
+					position = publicWorks.allBases->self().natural.bases[i]->base->getPosition();
+					BWAPI::Broodwar->drawTextMap(position.x(), position.y()+16, "%d (%.3f)\n\x0F%d\x02\nN.G:%.0f",i,publicWorks.allBases->self().natural.potential[i],publicWorks.allBases->self().natural.bases[i]->patches.size(),publicWorks.allBases->self().natural.ground[i]);
+					switch(publicWorks.allBases->self().natural.bases[i]->owner) {
+						case Macro::Infrastructure::None:
+							color = BWAPI::Colors::Brown;
+							break;
+						case Macro::Infrastructure::Mine:
+							color = BWAPI::Colors::Blue;
+							break;
+						case Macro::Infrastructure::His:
+							color = BWAPI::Colors::Red;
+							break;
+					}
+					BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),70,color);
+					if (publicWorks.allBases->self().natural.bases[i]->base->isStartLocation()) {
+						BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),68,BWAPI::Colors::Green);
+						BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),72,BWAPI::Colors::Green);
+					} else if (publicWorks.allBases->enemyIndex < publicWorks.allBases->startLocations.size())
+						if (publicWorks.allBases->self().natural.bases[i] == publicWorks.allBases->enemy().natural.info) {
+							BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),68,BWAPI::Colors::Yellow);
+						}
+					
+					BWAPI::Broodwar->setTextSize(1);
+					std::set<Choke> chokes = publicWorks.allBases->self().natural.bases[i]->base->getRegion()->getChokepoints();
+					for (std::set<Choke>::const_iterator choke = chokes.begin(); choke != chokes.end(); choke++) {
+						BWAPI::Broodwar->drawLineMap((*choke)->getSides().first.x(), (*choke)->getSides().first.y(), (*choke)->getSides().second.x(),(*choke)->getSides().second.y(), BWAPI::Colors::Grey);
+						BWAPI::Broodwar->drawTextMap((*choke)->getCenter().x(), (*choke)->getCenter().y(), "\x1D%.0f",(*choke)->getWidth());
+						//BWAPI::Broodwar->drawCircleMap((*choke)->getCenter().x(), (*choke)->getCenter().y(), (*choke)->getWidth()/2, BWAPI::Colors::Grey);
+					}
+				}
+				BWAPI::Broodwar->setTextSize(0);
+				if (publicWorks.allBases->enemyKnown())
+					for (i = 0; i < publicWorks.allBases->enemy().natural.bases.size(); i++) {
+						position = publicWorks.allBases->enemy().natural.bases[i]->base->getPosition();
+						BWAPI::Broodwar->drawTextMap(position.x(), position.y()+49, "E.G:%.0f",publicWorks.allBases->enemy().natural.ground[i]);
+					}
+			}
+			#pragma endregion
+			
 			#pragma region Resources
-			for (; i < publicWorks.hatcheries.size(); i++) {
+			for (i = 0; i < publicWorks.hatcheries.size(); i++) {
 				BWAPI::Position hatch = publicWorks.hatcheries[i]->getPosition();
 
 				for (unsigned j = 0; j < mines.minerals[i].size(); j++) {
@@ -972,55 +1191,23 @@ namespace Cerebrate {
 						BWAPI::Broodwar->drawTextMap(drone.x()-8, drone.y()-4, "%s", state.c_str());
 					}
 					BWAPI::Broodwar->setTextSize(2);
-					BWAPI::Broodwar->drawTextMap(mineral.x()-17, mineral.y()-8, "\x1F%d", resources);
-					BWAPI::Broodwar->drawTextMap(mineral.x()-3, mineral.y()-4, "%d", mines.minerals[i].miners[j].size());
+					BWAPI::Broodwar->drawTextMap(mineral.x()-17, mineral.y()-16, "\x1F%d", resources);
+					BWAPI::Broodwar->setTextSize(1);
+					BWAPI::Broodwar->drawTextMap(mineral.x()-3, mineral.y()-4, "\x1B%d", mines.minerals[i].miners[j].size());
 				}
 				BWAPI::Broodwar->setTextSize(2);
-				BWAPI::Broodwar->drawTextMap(hatch.x()-28, hatch.y()-16, "\x11Miners: %d", mines.minerals[i].getMiners().size());
+				BWAPI::Broodwar->drawTextMap(hatch.x()-28, hatch.y()-30, "\x11Miners: %d", mines.minerals[i].getMiners().size());
 			}
 			#pragma endregion
-
-			/*for (i = 0; i < publicWorks.basesTaken.size(); i++) {
-				BWTA::Region* base = publicWorks.basesTaken[i]->getRegion();
-				BWTA::Polygon drawing = base->getPolygon();
-
-				if (drawing.size()) {
-					BWAPI::Broodwar->drawLineMap(drawing[0].x(), drawing[0].y(), drawing[drawing.size()-1].x(), drawing[drawing.size()-1].y(), BWAPI::Colors::Purple);
-					for (unsigned j = 0; j < drawing.size()-1; j++)
-						BWAPI::Broodwar->drawLineMap(drawing[j].x(), drawing[j].y(), drawing[j+1].x(), drawing[j+1].y(), BWAPI::Colors::Purple);
-				
-
-					std::set<Choke> chokes = base->getChokepoints();
-					for (std::set<Choke>::iterator c = chokes.begin(); c != chokes.end(); c++)
-						BWAPI::Broodwar->drawEllipseMap((*c)->getCenter().x(), (*c)->getCenter().y(), (*c)->getWidth(), (*c)->getWidth(), BWAPI::Colors::Red);
-				}
-			}*/
-
-			for (i = 0; i < publicWorks.bases.size(); i++) {
-				BWAPI::Position position = publicWorks.bases[i].base->getPosition();
-				BWAPI::Broodwar->drawTextMap(position.x(), position.y(), "[%d] %.0f", i, publicWorks.bases[i].distance);
-				BWAPI::Color color;
-				switch(publicWorks.bases[i].owner) {
-					case Macro::Infrastructure::None:
-						color = BWAPI::Colors::Brown;
-						break;
-					case Macro::Infrastructure::Mine:
-						color = BWAPI::Colors::Blue;
-						break;
-					case Macro::Infrastructure::His:
-						color = BWAPI::Colors::Red;
-						break;
-				}
-				BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),70,color);
-			}
-
+			
 			#pragma region Text
+			BWAPI::Broodwar->setTextSize(2);
 			BWAPI::Broodwar->drawTextScreen(300, 0, "FPS: %0d", BWAPI::Broodwar->getFPS());
 			BWAPI::Broodwar->setTextSize(0);
 			BWAPI::Broodwar->drawTextScreen(305, 16, "APM: %d", BWAPI::Broodwar->getAPM());
-			BWAPI::Broodwar->drawTextScreen(5, 0, "Income: %.3f/.3%f %d", finances.income[0].mineral, finances.income[0].gas, finances.income[0].frame);
+			BWAPI::Broodwar->drawTextScreen(5, 0, "Income: %.2f min (%.3f per drone)\t%.2f gas\t[%d]", finances.income[0].mineral, finances.income[0].mineral/allUnits.getType(Drone).size(), finances.income[0].gas, finances.income[0].frame);
 			BWAPI::Broodwar->drawTextScreen(5, 10, "HATCHERIES: %d, %d", publicWorks.hatcheries.size(), mines.minerals.size());
-			BWAPI::Broodwar->drawTextScreen(5, 20, "Need for a) drones: %.3f (%+.0f)\tb) overlords: %.3f", industry.drones, (0.25/(finances.income[0].mineral/publicWorks.hatcheries.size()) - 1)*allUnits.getType(Drone).size(), industry.overlords);
+			BWAPI::Broodwar->drawTextScreen(5, 20, "Need for a) drones: %.2f (%+.0f)\tb) overlords: %.2f", industry.drones, (0.25/(finances.income[0].mineral/publicWorks.hatcheries.size()) - 1)*allUnits.getType(Drone).size(), industry.overlords);
 			BWAPI::Broodwar->drawTextScreen(5, 30, "Building a) drones: %d [%d]\tb) overlords: %d [%d]",
 				allUnits.eggsMorphing(Drone),allUnits.notCompleted(Drone),
 				allUnits.eggsMorphing(Overlord),allUnits.notCompleted(Overlord));
@@ -1029,23 +1216,22 @@ namespace Cerebrate {
 			units_decl << "UNITS = ";
 			std::vector<BWAPI::UnitType> alreadyDone;
 			BWAPI::UnitType type;
-			for (i = 0; i < allUnits.size() - 1; i++) {
+			type = allUnits[0]->getType();
+			units_decl << "\x04";
+			units_decl << &type.c_str()[5];
+			units_decl << ":\x02";
+			units_decl << allUnits.getType(type).size();
+			alreadyDone.push_back(type);
+			
+			for (i = 1; i < allUnits.size(); i++) {
 				type = allUnits[i]->getType();
 				if (!has(alreadyDone, type)) {
-					units_decl << "\x04";
+					units_decl << ", \x04";
 					units_decl << &type.c_str()[5];
 					units_decl << ":\x02";
 					units_decl << allUnits.getType(type).size();
-					units_decl << ", ";
 					alreadyDone.push_back(type);
 				}
-			}
-			type = allUnits[i]->getType();
-			if (!has(alreadyDone, type)) {
-				units_decl << "\x04";
-				units_decl << &type.c_str()[5];
-				units_decl << ":\x02";
-				units_decl << allUnits.getType(type).size();
 			}
 			alreadyDone.clear();
 			BWAPI::Broodwar->drawTextScreen(5, 40, units_decl.str().c_str());
@@ -1063,6 +1249,8 @@ namespace Cerebrate {
 			for (int i = 0; i < 199; i++) {
 				BWAPI::Broodwar->drawLineScreen(200-i,300-(int)((10000/42)*finances.income[i].mineral),
 												200-i-1,300-(int)((10000/42)*finances.income[i+1].mineral),BWAPI::Colors::Cyan);
+				BWAPI::Broodwar->drawLineScreen(200-i,300-(int)(finances.income[i].droneCount > 0 ? ((10000/42)*finances.income[i].mineral/finances.income[i].droneCount) : 0),
+												200-i-1,300-(int)(finances.income[i+1].droneCount > 0 ? ((10000/42)*finances.income[i+1].mineral/finances.income[i+1].droneCount) : 0), BWAPI::Colors::Teal);
 				BWAPI::Broodwar->drawLineScreen(200-i,300-(int)((10000/42)*finances.income[i].gas),
 												200-i-1,300-(int)((10000/42)*finances.income[i+1].gas),BWAPI::Colors::Green);
 			}
@@ -1117,10 +1305,23 @@ namespace Cerebrate {
 			BWTA::analyze();
 			Cerebrate* target = (Cerebrate*) pointer;
 
-			if (BWTA::getStartLocation(BWAPI::Broodwar->self()) != 0) {
-				target->publicWorks.bases.getBases();
+			Base start = BWTA::getStartLocation(BWAPI::Broodwar->self());
+			if (start != 0) {
+				Macro::Infrastructure::BaseGraph* graph = new Macro::Infrastructure::BaseGraph();
+				graph->populate();
+				for (unsigned i = 0; i < graph->startLocations.size(); i++)
+					if (graph->startLocations[i].info->base == start) {
+						graph->selfIndex = i;
+						break;
+					}
+				if (graph->startLocations.size() == 2) {
+					graph->enemyIndex = graph->selfIndex ? 0 : 1;
+					graph->enemy().info->owner = Macro::Infrastructure::His;
+				}
+				target->publicWorks.allBases = graph;
+				
 				for (unsigned i = 0; i < target->publicWorks.hatcheries.size(); i++)
-					target->publicWorks.bases.expanded(target->publicWorks.hatcheries[i]->getPosition());
+					target->publicWorks.allBases->expanded(target->publicWorks.hatcheries[i]->getPosition());
 			}
 			return 0;
 		}
@@ -1141,16 +1342,23 @@ namespace Cerebrate {
 			_data.act();
 		}
 		virtual void onSendText(std::string text) {
-			if (!text.compare("expand")) {
+			/*if (!text.compare("expand")) {
 				Base next = _data.publicWorks.bases[0].base;
 				Unit myDrone = _data.mines.getDrone(next->getPosition());
 				myDrone->build(next->getTilePosition(), Hatch);
+			} else*/ if (!text.compare("drone")) {
+				_data.makeDrones = !_data.makeDrones;
 			}
 		}
 		virtual void onReceiveText(BWAPI::Player* player, std::string text) { }
 		virtual void onPlayerLeft(BWAPI::Player* player) { }
 		virtual void onNukeDetect(BWAPI::Position target) { }
-		virtual void onUnitDiscover(BWAPI::Unit* unit) { }
+		virtual void onUnitDiscover(BWAPI::Unit* unit) {
+			if (unit->getPlayer() == BWAPI::Broodwar->enemy()) {
+				if (unit->getType().isResourceDepot())
+					_data.publicWorks.allBases->enemySighted(unit->getPosition());
+			}
+		}
 		virtual void onUnitEvade(BWAPI::Unit* unit) { }
 		virtual void onUnitShow(BWAPI::Unit* unit) { }
 		virtual void onUnitHide(BWAPI::Unit* unit) { }
