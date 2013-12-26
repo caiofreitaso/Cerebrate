@@ -26,6 +26,7 @@ void Cerebrate::Resources::Mineralset::update() {
 				j++;
 			else
 				miners[i].erase(miners[i].begin()+j);
+	balance();
 }
 Cerebrate::Unitset Cerebrate::Resources::Mineralset::getMiners() const {
 	Cerebrate::Unitset ret;
@@ -46,23 +47,47 @@ unsigned Cerebrate::Resources::Mineralset::indexOf(Cerebrate::Unit mineral) cons
 }
 void Cerebrate::Resources::Mineralset::addMiner(unsigned index, Cerebrate::Resources::MinerDrone drone) { miners[index].push_back(drone); }
 void Cerebrate::Resources::Mineralset::addMiner(Cerebrate::Unit mineral, Cerebrate::Resources::MinerDrone drone) { miners[indexOf(mineral)].push_back(drone); }
-void Cerebrate::Resources::Mineralset::act() {
+void Cerebrate::Resources::Mineralset::balance() {
+	double average = 0;
+
 	for (unsigned i = 0; i < miners.size(); i++)
+		average += miners[i].size();
+	average /= miners.size();
+
+	unsigned maximum = ceil(average);
+	unsigned minimum = floor(average);
+
+	std::vector<unsigned> saturated, undersaturated;
+	for (unsigned i = 0; i < miners.size(); i++)
+		if (miners[i].size() > maximum)
+			saturated.push_back(i);
+		else if (miners[i].size() < minimum)
+			undersaturated.push_back(i);
+
+	for (unsigned i = 0; i < saturated.size(); i++)
+		while (miners[saturated[i]].size() > maximum) {
+			MinerDrone worker = miners[saturated[i]][0];
+			worker.state = Cerebrate::Resources::Returning;
+
+			miners[saturated[i]].erase(miners[saturated[i]].begin());
+			miners[undersaturated[0]].push_back(worker);
+
+			if (miners[undersaturated[0]].size() == minimum)
+				undersaturated.erase(undersaturated.begin());
+		}
+}
+void Cerebrate::Resources::Mineralset::act() {
+	for (unsigned i = 0; i < miners.size(); i++) {
+		if ((!miners[i].size() && mining[i]) || (miners[i].size() == 1 && mining[i] && miners[i][0].state == Cerebrate::Resources::Waiting))
+			mining[i] = false;
 		for (unsigned j = 0; j < miners[i].size(); j++)
 			switch(miners[i][j].state) {
-				case Cerebrate::Resources::Idle:
-					if (!miners[i][j].drone->isCarryingMinerals())
-						miners[i][j].state = Cerebrate::Resources::Waiting;
-					break;
 				case Cerebrate::Resources::Waiting:
 					if (!mining[i]) {
-						miners[i][j].drone->gather(patches[i]);
 						mining[i] = true;
 						miners[i][j].state = Cerebrate::Resources::Mining;
-					} else if (miners[i][j].drone->getOrder() != BWAPI::Orders::HoldPosition) {
-						miners[i][j].drone->gather(patches[i]);
-						miners[i][j].drone->holdPosition(true);
 					}
+					miners[i][j].drone->gather(patches[i]);
 					break;
 				case Cerebrate::Resources::Mining:
 					if (miners[i][j].drone->isCarryingMinerals()) {
@@ -75,10 +100,11 @@ void Cerebrate::Resources::Mineralset::act() {
 						if (miners[i][j].drone->isCarryingMinerals())
 							miners[i][j].drone->returnCargo();
 						else
-							miners[i][j].state = Cerebrate::Resources::Idle;
+							miners[i][j].state = Cerebrate::Resources::Waiting;
 					}
 					break;
 			}
+	}
 }
 Cerebrate::Unit Cerebrate::Resources::Mineralset::getBestMineral() {
 	Cerebrate::Unitset candidates;
@@ -115,7 +141,6 @@ Cerebrate::Unit Cerebrate::Resources::Mineralset::getDrone() {
 				unsigned k = 0;
 				for (; k < candidates.size(); k++)
 					if ((miners[i][j].state == candidates[k].state && miners[i][j].drone->getPosition().getDistance(hatch) < candidates[k].drone->getPosition().getDistance(hatch)) ||
-						miners[i][j].state == Idle ||
 						(miners[i][j].state == Waiting && candidates[k].state == Cerebrate::Resources::Mining))
 						break;
 				candidates.insert(candidates.begin()+k, miners[i][j]);
@@ -181,7 +206,7 @@ void Cerebrate::Resources::Miner::idleWorker(Cerebrate::Unit unit, Cerebrate::In
 		#ifdef NORMAL_MINING
 		unit->gather(mineral);
 		#else
-		minerals[i].addMiner(mineral,Cerebrate::Resources::MinerDrone(unit,Cerebrate::Resources::Idle));
+		minerals[i].addMiner(mineral,Cerebrate::Resources::MinerDrone(unit,Cerebrate::Resources::Returning));
 		#endif
 	}
 }
@@ -189,10 +214,49 @@ void Cerebrate::Resources::Miner::act() {
 	for (unsigned i = 0; i < minerals.size(); i++)
 		minerals[i].act();
 }
+void Cerebrate::Resources::Miner::draw() {
+	for (unsigned i = 0; i < minerals.size(); i++) {
+		BWAPI::Position hatch = minerals[i].hatch;
+
+		for (unsigned j = 0; j < minerals[i].size(); j++) {
+			BWAPI::Position mineral = minerals[i].patches[j]->getPosition();
+			int resources = minerals[i].patches[j]->getResources();
+
+			BWAPI::Broodwar->setTextSize(0);
+			for (unsigned k = 0; k < minerals[i].miners[j].size(); k++) {
+				BWAPI::Position drone = minerals[i].miners[j][k].drone->getPosition();
+				std::string state;
+				BWAPI::Color color;
+				switch (minerals[i].miners[j][k].state) {
+					case Cerebrate::Resources::Waiting:
+						state = "\x16Wait";
+						color = BWAPI::Colors::White;
+						break;
+					case Cerebrate::Resources::Mining:
+						state = "\x1FMine";
+						color = BWAPI::Colors::Cyan;
+						break;
+					case Cerebrate::Resources::Returning:
+						state = "\x0FReturn";
+						color = BWAPI::Colors::Teal;
+						break;
+				}
+				BWAPI::Broodwar->drawLineMap(drone.x(), drone.y(), mineral.x(), mineral.y(), color);
+				BWAPI::Broodwar->drawTextMap(drone.x()-8, drone.y()-4, "%s", state.c_str());
+			}
+			BWAPI::Broodwar->setTextSize(2);
+			BWAPI::Broodwar->drawTextMap(mineral.x()-17, mineral.y()-16, (minerals[i].mining[j] ? "\x1F%d" : "\x0F%d"), resources);
+			BWAPI::Broodwar->setTextSize(1);
+			BWAPI::Broodwar->drawTextMap(mineral.x()-3, mineral.y()-4, "\x1B%d", minerals[i].miners[j].size());
+		}
+		BWAPI::Broodwar->setTextSize(2);
+		BWAPI::Broodwar->drawTextMap(hatch.x()-28, hatch.y()-30, "\x11Miners: %d", minerals[i].getMiners().size());
+	}
+}
 Cerebrate::Unit Cerebrate::Resources::Miner::getDrone(BWAPI::Position where) {
 	double distance = where.getDistance(minerals[0].hatch);
 	unsigned index = 0, i = 0;
-	
+
 	i++;
 
 	for (; i < minerals.size(); i++)

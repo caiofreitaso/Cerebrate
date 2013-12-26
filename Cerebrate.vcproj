@@ -124,7 +124,7 @@
 				EnableIntrinsicFunctions="true"
 				FavorSizeOrSpeed="1"
 				AdditionalIncludeDirectories="../include"
-				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_USRDLL;EXAMPLEAIMODULE_EXPORTS;_SECURE_SCL 0"
+				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_USRDLL;EXAMPLEAIMODULE_EXPORTS;_SECURE_SCL 0;SAVE_IMG"
 				RuntimeLibrary="2"
 				EnableFunctionLevelLinking="true"
 				WarningLevel="3"
@@ -142,6 +142,7 @@
 			<Tool
 				Name="VCLinkerTool"
 				AdditionalDependencies="../lib/BWAPI.lib ../lib/BWTA.lib ../lib/tinyxml.lib ../lib/CGAL-vc90-mt.lib ../lib/libboost_thread-vc90-mt-1_40.lib ../lib/gmp-vc90-mt.lib ../lib/mpfr-vc90-mt.lib"
+				ShowProgress="0"
 				LinkIncremental="1"
 				GenerateDebugInformation="false"
 				SubSystem="2"
@@ -340,6 +341,42 @@
 			</File>
 			<File
 				RelativePath=".\Source\Dll.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Economy.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Economy.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Infrastructure.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Infrastructure.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Intelligence.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Intelligence.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Resources.cpp"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Resources.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Util.h"
 				>
 			</File>
 		</Filter>

@@ -1,16 +1,16 @@
 #pragma once
 #include "Util.h"
 #include "Infrastructure.h"
+#include <cmath>
 
 namespace Cerebrate {
 	namespace Resources {
 		enum MinerStates {
-			Idle,
 			Waiting,
 			Mining,
 			Returning
 		};
-		
+
 		struct MinerDrone {
 			Unit drone;
 			MinerStates state;
@@ -38,6 +38,7 @@ namespace Cerebrate {
 			void addMiner(unsigned index, MinerDrone drone);
 			void addMiner(Unit mineral, MinerDrone drone);
 
+			void balance();
 			void update();
 			void act();
 
@@ -54,6 +55,7 @@ namespace Cerebrate {
 			void remove(unsigned index);
 			void update();
 			void act();
+			void draw();
 			void idleWorker(Unit unit, Infrastructure::Builder& builder);
 			Unitset getAllMiners() const;
 			Unit getDrone(BWAPI::Position where);

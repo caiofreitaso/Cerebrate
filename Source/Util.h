@@ -15,14 +15,15 @@ namespace Cerebrate {
 
 	typedef BWAPI::Unit* Unit;
 	typedef BWAPI::Player* Player;
-	
+
 	typedef std::vector<BWAPI::Unit*> Unitset;
-	
+
 	typedef BWTA::BaseLocation* Base;
 	typedef std::vector<Base> Baseset;
-	
+
 	typedef BWTA::Chokepoint* Choke;
 	typedef std::vector<Choke> Chokeset;
+	typedef std::set<Choke>::const_iterator Choke_it;
 
 	const BWAPI::UnitType Egg = BWAPI::UnitType(36);
 	const BWAPI::UnitType Drone = BWAPI::UnitType(41);
@@ -42,7 +43,7 @@ namespace Cerebrate {
 	const BWAPI::UnitType Hive = BWAPI::UnitType(133);
 
 	const BWAPI::UnitType Extractor = BWAPI::UnitType(149);
-	
+
 	const BWAPI::UnitType Pool = BWAPI::UnitType(142);
 	const BWAPI::UnitType HydraDen = BWAPI::UnitType(135);
 	const BWAPI::UnitType Spire = BWAPI::UnitType(141);
@@ -91,7 +92,7 @@ namespace Cerebrate {
 				roles[1] = r[1];
 			}
 		};
-		
+
 		const UnitType units[] = {
 			UnitType(Ling,		Ling_Roles,		1),
 			UnitType(Hydra,		Hydra_Roles,	1),

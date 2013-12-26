@@ -26,12 +26,11 @@ void Cerebrate::Economy::Economist::update(Player player, int frame, unsigned dr
 		}
 
 		income[0] = Resource();
-		for (i = 0; i < SIZE-1; i++)
-			if (frame - states[i].frame > 500)
-				break;
-
-		income[0].mineral = (states[0].mineral - states[i].mineral) / (frame - states[i].frame);
-		income[0].gas = (states[0].gas - states[i].gas) / (frame - states[i].frame);
+		Resource average;
+		average.mineral = (states[9].mineral + states[10].mineral + states[11].mineral)/3;
+		average.gas = (states[9].gas + states[10].gas + states[11].gas)/3;
+		income[0].mineral = (states[0].mineral - average.mineral) / 200;//(frame - average.frame);
+		income[0].gas = (states[0].gas - average.gas) / 200;//(frame - average.frame);
 		income[0].frame = frame;
 		income[0].droneCount = droneCount;
 
@@ -47,8 +46,22 @@ bool Cerebrate::Economy::Economist::support(BWAPI::UnitType unit, int quantity) 
 }
 Cerebrate::Economy::Resource Cerebrate::Economy::Economist::projectResources(int frames) {
 	Cerebrate::Economy::Resource ret;
-	ret.frame	=	-1;
-	ret.mineral	=	states[0].mineral + income[0].mineral * frames;
-	ret.gas		=	states[0].gas + income[0].gas * frames;
+	ret.frame	= states[0].frame	+ frames;
+	ret.mineral	= states[0].mineral	+ income[0].mineral * frames;
+	ret.gas		= states[0].gas		+ income[0].gas * frames;
 	return ret;
+}
+
+void Cerebrate::Economy::Economist::draw() {
+	for (int i = 0; i < SIZE; i++) {
+		BWAPI::Broodwar->drawLineScreen(200-i,300-(int)((10000/42)*income[i].mineral),
+										200-i,300,
+										BWAPI::Colors::Cyan);
+		BWAPI::Broodwar->drawLineScreen(200-i,300-(int)(income[i].droneCount > 0 ? ((10000/42)*income[i].mineral/income[i].droneCount) : 0),
+										200-i,300,
+										BWAPI::Colors::Teal);
+		BWAPI::Broodwar->drawLineScreen(200-i,300-(int)((10000/42)*income[i].gas),
+										200-i-1,300,
+										BWAPI::Colors::Green);
+	}
 }
