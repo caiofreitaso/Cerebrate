@@ -190,19 +190,18 @@ Cerebrate::Unitset Cerebrate::Resources::Miner::getAllMiners() const {
 
 	return ret;
 }
-void Cerebrate::Resources::Miner::idleWorker(Cerebrate::Unit unit, Cerebrate::Infrastructure::Builder& builder) {
+void Cerebrate::Resources::Miner::idleWorker(Cerebrate::Unit unit) {
 	#ifndef NORMAL_MINING
 	if (!has(getAllMiners(),unit))
 	#endif
 	{
 		Unit mineral = 0;
 		unsigned i = 0;
-		for (; i < minerals.size(); i++)
-			if (builder.hatcheries[i]->isCompleted()) {
-				mineral = minerals[i].getBestMineral();
-				if (mineral)
-					break;
-			}
+		for (; i < minerals.size(); i++) {
+			mineral = minerals[i].getBestMineral();
+			if (mineral)
+				break;
+		}
 		#ifdef NORMAL_MINING
 		unit->gather(mineral);
 		#else

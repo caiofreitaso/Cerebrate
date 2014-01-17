@@ -1,6 +1,5 @@
 #pragma once
 
-#include <BWAPI/Client.h>
 #include <string>
 #include <cstdlib>
 #ifdef SAVE_CSV
@@ -162,7 +161,7 @@ namespace Cerebrate {
 			int* ret = new int[builder.hatcheries.size()];
 
 			for (unsigned i = 0; i < builder.hatcheries.size(); i++)
-				ret[i] = builder.hatcheries[i]->getRemainingTrainTime();
+				ret[i] = builder.hatcheries[i].hatch->getRemainingTrainTime();
 			return ret;
 		}
 
@@ -235,11 +234,32 @@ namespace Cerebrate {
 				unsigned size = larvae.size();
 				size = size < unitQueue.size() ? size : unitQueue.size();
 
-				for (Unitset::iterator larva = larvae.begin(); larva != larvae.end() && unitQueue.size(); larva++)
-					if ((*larva)->morph(unitQueue[0].type)) {
+				for (Unitset::iterator larva = larvae.begin(); larva != larvae.end() && unitQueue.size(); larva++) {
+					if ((*larva)->morph(unitQueue[0].type))
 						unitQueue.erase(unitQueue.begin());
-						break;
-					}
+					break;
+				}
+			}
+			
+			void expand(Infrastructure::Builder& builder, Resources::Miner& mines) {
+				if (mines.getDrone(BWAPI::Position(builder.nextBase()))->build(builder.nextBase(), Hatch))
+					unitQueue.erase(unitQueue.begin());
+			}
+			
+			void build(Infrastructure::Builder& builder, Resources::Miner& mines) {
+				if (builder.build(mines,unitQueue[0].type))
+					unitQueue.erase(unitQueue.begin());
+			}
+			
+			void pop(Infrastructure::Builder& builder, Resources::Miner& mines) {
+				if (unitQueue.size()){
+					if (unitQueue[0].type.isResourceDepot())
+						expand(builder,mines);
+					else if (unitQueue[0].type.isBuilding())
+						build(builder,mines);
+					else
+						morph(builder);
+				}
 			}
 		};
 	};
@@ -295,7 +315,7 @@ namespace Cerebrate {
 			Thresholds() : drones(.25),overlords(.75),priority(.5) { }
 		} thresholds;
 
-		Cerebrate(bool debug = true) : player(0),debug(debug),makeDrones(true),stage(Action),passivity(rand()/RAND_MAX) { }
+		Cerebrate(bool debug = true) : player(0),debug(debug),makeDrones(true),stage(Action),passivity(0.3) { }
 		~Cerebrate() {
 			#ifdef SAVE_CSV
 			file.close();
@@ -331,25 +351,25 @@ namespace Cerebrate {
 			double strategies[5][2];
 			double airdistance = 0, grounddistance = 0, naturaldist = 0;
 
-			if (intel.bases) {				
-				if (intel.bases->enemyKnown()) {
-					unsigned index = intel.bases->enemyIndex - (intel.bases->selfIndex > intel.bases->enemyIndex ? 0 : 1);
+			if (publicWorks.bases) {				
+				if (publicWorks.bases->enemyKnown()) {
+					unsigned index = publicWorks.bases->enemyIndex - (publicWorks.bases->selfIndex > publicWorks.bases->enemyIndex ? 0 : 1);
 
-					airdistance = intel.bases->self().air[index];
-					grounddistance = intel.bases->self().ground[index];
+					airdistance = publicWorks.bases->self().air[index];
+					grounddistance = publicWorks.bases->self().ground[index];
 					
-					naturaldist = intel.bases->self().natural.info->base->getGroundDistance(intel.bases->enemy().natural.info->base);
+					naturaldist = publicWorks.bases->self().natural.info->base->getGroundDistance(publicWorks.bases->enemy().natural.info->base);
 				} else {
-					for (i = 0; i < intel.bases->self().ground.size(); i++){
-						airdistance += intel.bases->self().air[i];
-						grounddistance += intel.bases->self().ground[i];
+					for (i = 0; i < publicWorks.bases->self().ground.size(); i++){
+						airdistance += publicWorks.bases->self().air[i];
+						grounddistance += publicWorks.bases->self().ground[i];
 					}
 					airdistance /= i;
 					grounddistance /= i;
 
-					for(i = 0; i < intel.bases->startLocations.size(); i++)
-						if (i != intel.bases->selfIndex)
-							naturaldist += intel.bases->self().natural.info->base->getGroundDistance(intel.bases->startLocations[i].natural.info->base);
+					for(i = 0; i < publicWorks.bases->startLocations.size(); i++)
+						if (i != publicWorks.bases->selfIndex)
+							naturaldist += publicWorks.bases->self().natural.info->base->getGroundDistance(publicWorks.bases->startLocations[i].natural.info->base);
 					naturaldist /= i-1;
 				}
 			}
@@ -363,7 +383,7 @@ namespace Cerebrate {
 			strategies[0][0] = 1 - (tanh(2*(grounddistance-4.8)) + 1)/2;
 			strategies[0][0] *= strategies[0][0];
 
-			strategies[1][0] = 1 - (tanh(0.75*(grounddistance-5)) + 1)/2;
+			strategies[1][0] = 1 - (tanh(0.75*(grounddistance-5)	) + 1)/2;
 
 			strategies[2][0] = naturaldist - 3.25;
 			strategies[2][0] *= strategies[2][0];
@@ -406,7 +426,8 @@ namespace Cerebrate {
 				else
 					chances[i] = 0;
 			
-			double random = rand()/RAND_MAX;
+			srand((unsigned)this);
+			double random = rand() % 100;
 			int found = -1;
 			for(i = 0; i < 5; i++) {
 				if (!chances[i])
@@ -492,8 +513,8 @@ namespace Cerebrate {
 			mines.update();
 			industry.needForDrones(publicWorks, finances);
 			industry.needForOverlords(publicWorks, allUnits, player);
-			if (intel.bases)
-				intel.bases->update();
+			if (publicWorks.bases)
+				publicWorks.bases->update();
 		}
 		void act() {
 			if (BWAPI::Broodwar->isReplay() || !BWAPI::Broodwar->getFrameCount())
@@ -510,11 +531,11 @@ namespace Cerebrate {
 			if (BWAPI::Broodwar->getFrameCount() % BWAPI::Broodwar->getLatencyFrames() != 0)
 				return;
 
-			industry.clean(thresholds.priority, allUnits);
-			if (makeDrones)
-				industry.queueCivil(thresholds.drones, thresholds.overlords);
+			//industry.clean(thresholds.priority, allUnits);
+			//if (makeDrones)
+			//	industry.queueCivil(thresholds.drones, thresholds.overlords);
 
-			industry.morph(publicWorks);
+			industry.pop(publicWorks,mines);
 
 			mines.act();
 
@@ -524,7 +545,7 @@ namespace Cerebrate {
 
 				if ((*u)->isIdle()) {
 					if ((*u)->getType().isWorker())
-						mines.idleWorker(*u,publicWorks);
+						mines.idleWorker(*u);
 					else {
 					}
 				}
@@ -535,7 +556,7 @@ namespace Cerebrate {
 
 			#pragma region Base
 			BWAPI::Broodwar->setTextSize(0);
-			intel.draw();
+			publicWorks.draw();
 			#pragma endregion
 
 			#pragma region Resource
@@ -554,9 +575,9 @@ namespace Cerebrate {
 				allUnits.eggsMorphing(Drone),allUnits.notCompleted(Drone),
 				allUnits.eggsMorphing(Overlord),allUnits.notCompleted(Overlord));
 
-			BWAPI::Broodwar->drawTextScreen(550, 50, "\x07 choke: %2.0f", Intelligence::BaseInfo::wchoke);
-			BWAPI::Broodwar->drawTextScreen(550, 66, "\x07 poly:  %2.0f", Intelligence::BaseInfo::wpoly);
-			BWAPI::Broodwar->drawTextScreen(550, 82, "\x07 patch: %2.0f", Intelligence::BaseInfo::wpatch);
+			BWAPI::Broodwar->drawTextScreen(550, 50, "\x07 choke: %2.0f", Infrastructure::BaseInfo::wchoke);
+			BWAPI::Broodwar->drawTextScreen(550, 66, "\x07 poly:  %2.0f", Infrastructure::BaseInfo::wpoly);
+			BWAPI::Broodwar->drawTextScreen(550, 82, "\x07 patch: %2.0f", Infrastructure::BaseInfo::wpatch);
 
 			std::ostringstream units_decl;
 			units_decl << "UNITS = ";
@@ -601,14 +622,14 @@ namespace Cerebrate {
 
 		void newHatchery(Unit hatch) {
 			publicWorks.addHatch(hatch);
-			if (intel.bases)
-				intel.bases->expanded(hatch->getPosition());
+			if (publicWorks.bases)
+				publicWorks.bases->expanded(hatch->getPosition());
 			mines.add(hatch);
 		}
 		void removeHatchery(Unit hatch) {
 			unsigned index = 0;
-			for(Unitset::iterator i = publicWorks.hatcheries.begin(); i != publicWorks.hatcheries.end(); i++, index++)
-				if (*i == hatch) {
+			for(std::vector<Infrastructure::Hatchery>::iterator i = publicWorks.hatcheries.begin(); i != publicWorks.hatcheries.end(); i++, index++)
+				if (i->hatch == hatch) {
 					publicWorks.hatcheries.erase(i);
 					break;
 				}
@@ -636,11 +657,8 @@ namespace Cerebrate {
 		}
 		void morphUnit(Unit unit) {
 			if (unit->getPlayer() == player)
-				if (unit->getType().isBuilding()) {
+				if (unit->getType().isBuilding())
 					allUnits.remove(unit);
-					if (unit->getType().isResourceDepot())
-						newHatchery(unit);
-				}
 		}
 
 		static DWORD WINAPI analyzeThread(LPVOID pointer) {
@@ -649,7 +667,7 @@ namespace Cerebrate {
 
 			Base start = BWTA::getStartLocation(BWAPI::Broodwar->self());
 			if (start != 0) {
-				Intelligence::BaseGraph* graph = new Intelligence::BaseGraph();
+				Infrastructure::BaseGraph* graph = new Infrastructure::BaseGraph();
 				graph->populate();
 				for (unsigned i = 0; i < graph->startLocations.size(); i++)
 					if (graph->startLocations[i].info->base == start) {
@@ -658,13 +676,14 @@ namespace Cerebrate {
 					}
 				if (graph->startLocations.size() == 2) {
 					graph->enemyIndex = graph->selfIndex ? 0 : 1;
-					graph->enemy().info->owner = Intelligence::His;
+					graph->enemy().info->owner = Infrastructure::His;
 				}
-				target->intel.bases = graph;
+				target->publicWorks.bases = graph;
 
 				for (unsigned i = 0; i < target->publicWorks.hatcheries.size(); i++)
-					target->intel.bases->expanded(target->publicWorks.hatcheries[i]->getPosition());
+					target->publicWorks.bases->expanded(target->publicWorks.hatcheries[i].hatch->getPosition());
 
+				target->publicWorks.updateHatchs();
 				target->setOpening();
 				/*Intelligence::BaseInfo::map = new Intelligence::Map(BWAPI::Broodwar->mapWidth(), BWAPI::Broodwar->mapHeight());
 				for (unsigned i = 0; i < Intelligence::BaseInfo::map->x; i++)
@@ -691,17 +710,17 @@ namespace Cerebrate {
 		}
 		virtual void onSendText(std::string text) {
 			if (!text.compare("expand")) {
-				BWAPI::TilePosition position = _data.intel.nextBase();
+				BWAPI::TilePosition position = _data.publicWorks.nextBase();
 				Unit myDrone = _data.mines.getDrone(BWAPI::Position(position));
 				myDrone->build(position, Hatch);
 			} else if (!text.compare("drone")) {
 				_data.makeDrones = !_data.makeDrones;
 			} else if (!text.compare(0,6,"patch "))
-				Intelligence::BaseInfo::wpatch = atof(&text.c_str()[6]);
+				Infrastructure::BaseInfo::wpatch = atof(&text.c_str()[6]);
 			else if (!text.compare(0,6,"choke "))
-				Intelligence::BaseInfo::wchoke = atof(&text.c_str()[6]);
+				Infrastructure::BaseInfo::wchoke = atof(&text.c_str()[6]);
 			else if (!text.compare(0,5,"poly "))
-				Intelligence::BaseInfo::wpoly = atof(&text.c_str()[5]);
+				Infrastructure::BaseInfo::wpoly = atof(&text.c_str()[5]);
 		}
 		virtual void onReceiveText(BWAPI::Player* player, std::string text) { }
 		virtual void onPlayerLeft(BWAPI::Player* player) { }
@@ -709,7 +728,7 @@ namespace Cerebrate {
 		virtual void onUnitDiscover(BWAPI::Unit* unit) {
 			if (unit->getPlayer() == BWAPI::Broodwar->enemy()) {
 				if (unit->getType().isResourceDepot())
-					_data.intel.bases->enemySighted(unit->getPosition());
+					_data.publicWorks.bases->enemySighted(unit->getPosition());
 			}
 		}
 		virtual void onUnitEvade(BWAPI::Unit* unit) { }

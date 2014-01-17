@@ -1,7 +1,5 @@
 #pragma once
 #include "Util.h"
-#include "Infrastructure.h"
-#include <cmath>
 
 namespace Cerebrate {
 	namespace Resources {
@@ -56,7 +54,7 @@ namespace Cerebrate {
 			void update();
 			void act();
 			void draw();
-			void idleWorker(Unit unit, Infrastructure::Builder& builder);
+			void idleWorker(Unit unit);
 			Unitset getAllMiners() const;
 			Unit getDrone(BWAPI::Position where);
 		};

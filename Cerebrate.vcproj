@@ -376,6 +376,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\Source\Util.cpp"
+				>
+			</File>
+			<File
 				RelativePath=".\Source\Util.h"
 				>
 			</File>

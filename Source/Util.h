@@ -3,6 +3,19 @@
 #include <BWAPI/Client.h>
 #include <BWTA.h>
 #include <vector>
+#include <cmath>
+
+namespace Cerebrate {
+	namespace TerrainAnalysis {
+		struct Point;
+	}
+}
+Cerebrate::TerrainAnalysis::Point operator-(Cerebrate::TerrainAnalysis::Point a, Cerebrate::TerrainAnalysis::Point b);
+Cerebrate::TerrainAnalysis::Point operator+(Cerebrate::TerrainAnalysis::Point a, Cerebrate::TerrainAnalysis::Point b);
+Cerebrate::TerrainAnalysis::Point operator*(double a, Cerebrate::TerrainAnalysis::Point b);
+Cerebrate::TerrainAnalysis::Point operator*(Cerebrate::TerrainAnalysis::Point a, double b);
+Cerebrate::TerrainAnalysis::Point operator/(Cerebrate::TerrainAnalysis::Point a, double b);
+Cerebrate::TerrainAnalysis::Point operator~(Cerebrate::TerrainAnalysis::Point a);
 
 namespace Cerebrate {
 	template<typename T>
@@ -12,6 +25,58 @@ namespace Cerebrate {
 				return true;
 		return false;
 	}
+	
+	namespace TerrainAnalysis {	
+		struct Point {
+			double x, y;
+			
+			Point() : x(0), y(0) { }
+			Point(double i, double j) : x(i), y(j) { }
+			Point(Point const& p) : x(p.x), y(p.y) { }
+			Point(BWAPI::TilePosition p) { init(BWAPI::Position(p)); }
+			Point(BWAPI::Position p) : x(p.x()), y(p.y()) { }
+			
+			double length() const { return sqrt(x*x+y*y); }
+			
+			private:
+				void init(BWAPI::Position p) {
+					x = p.x();
+					y = p.y();
+				}
+		};
+		struct Segment {
+			Point origin, d;
+			
+			Segment(Segment const& c) : origin(c.origin), d(c.d) { }
+			Segment(Point a, Point b) : origin(a), d(b-a) { }
+		};
+		
+		typedef std::vector<Segment> Polygon;
+		
+		struct Ray {
+			Point origin, d;
+			
+			Ray(Point a) : origin(a), d(Point(1,0)) { }
+			Ray(Point a, Point b) : origin(a), d(~(b-a)) { }
+			
+			bool intersect(Segment a) const {
+				double seg = a.origin.y*d.x + d.y*origin.x - origin.y*d.x - d.y*a.origin.x;
+				seg /= a.d.x*d.y - a.d.y*d.x;
+				
+				if (seg < -0.00001 || seg > 1.00001)
+					return false;
+				
+				double ret = (a.origin.x + a.d.x*seg - origin.x)/d.x;
+				return ret > -0.00001;
+			}
+		};
+
+
+		Polygon convert(BWTA::Polygon p);
+		bool in(Polygon& p, Point a);
+		bool in(Polygon& p, BWAPI::Position a);
+		bool in(Polygon& p, BWAPI::TilePosition a);
+	};
 
 	typedef BWAPI::Unit* Unit;
 	typedef BWAPI::Player* Player;
