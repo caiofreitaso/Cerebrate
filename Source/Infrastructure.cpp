@@ -1,10 +1,11 @@
 #pragma once
 #include "Infrastructure.h"
 
-double Cerebrate::Infrastructure::BaseInfo::wchoke = -3;
-double Cerebrate::Infrastructure::BaseInfo::wpatch = 13;
-double Cerebrate::Infrastructure::BaseInfo::wpoly = 1;
-//BWTA::RectangleArray<double> *Cerebrate::Infrastructure::BaseInfo::map = 0;
+double Cerebrate::Infrastructure::BaseInfo::wchoke = 1000;
+double Cerebrate::Infrastructure::BaseInfo::wpatch = 13000;
+double Cerebrate::Infrastructure::BaseInfo::wpoly = 1000;
+
+//// BaseInfo
 
 int Cerebrate::Infrastructure::BaseInfo::minerals() const {
 	int r = 0;
@@ -12,7 +13,6 @@ int Cerebrate::Infrastructure::BaseInfo::minerals() const {
 		r += patches[i].ammount;
 	return r;
 }
-
 int Cerebrate::Infrastructure::BaseInfo::gas() const {
 	int r = 0;
 	for (unsigned i = 0; i < geysers.size(); i++)
@@ -46,53 +46,72 @@ double Cerebrate::Infrastructure::BaseInfo::tileValue(BWAPI::TilePosition tile) 
 	double tileValue = 0, chokeValue, patchValue, polyValue, d;
 
 	unsigned walk = walkTiles(tile);
+	
+	TerrainAnalysis::Point set[4];
+	set[0] = TerrainAnalysis::Point(tile);
+	set[1] = set[0];
+	set[1].x += 31;
+	set[2] = set[0];
+	set[2].y += 31;
+	set[3] = set[2];
+	set[3].x += 31;
+	
 	if (walk < 16 || !BWAPI::Broodwar->isBuildable(tile))
 		tileValue -= 80;
 
 	for (unsigned k = 0; k < patches.size(); k++) {
-		d = (tile.getDistance(BWAPI::TilePosition(BWAPI::Position(patches[k].position.first, patches[k].position.second))));
-		if (d != 0) {
-			patchValue = wpatch/(d*d);
-			tileValue -= patchValue;
-		} else
-			return -80;
+		d = 0;
+		for (unsigned j = 0; j < 4; j++)
+			d += set[j].distance(BWAPI::Position(patches[k].position.first, patches[k].position.second));
+		d /= 4;
+
+		patchValue = wpatch/(d*d);
+		tileValue -= patchValue;
 	}
 
 	for (unsigned k = 0; k < geysers.size(); k++) {
-		d = (tile.getDistance(BWAPI::TilePosition(BWAPI::Position(geysers[k].position.first, geysers[k].position.second))));
-		if (d != 0) {
-			patchValue = 4*wpatch/(d*d);
-			tileValue -= patchValue;
-		} else
-			return -80;
+		d = 0;
+		for (unsigned j = 0; j < 4; j++)
+			d += set[j].distance(BWAPI::Position(geysers[k].position.first, geysers[k].position.second));
+		d /= 4;
+
+		patchValue = 4*wpatch/(d*d);
+		tileValue -= patchValue;
 	}
 
-	d = 5000;
-	for (std::set<Choke>::const_iterator choke = chokes.begin(); choke != chokes.end(); choke++)
-		if (d > tile.getDistance(BWAPI::TilePosition((*choke)->getCenter()))) {
-			d = tile.getDistance(BWAPI::TilePosition((*choke)->getCenter()));
-			chokeValue = (*choke)->getWidth() < 80 ? (*choke)->getWidth() : 80;
-		}
+	for (std::set<Choke>::const_iterator choke = chokes.begin(); choke != chokes.end(); choke++) {
+		d = 0;
+		for (unsigned j = 0; j < 4; j++)
+			d += set[j].distance((*choke)->getCenter());
+		d /= 4;
 
-	if (d != 0)
+		chokeValue = (*choke)->getWidth() < 80 ? (*choke)->getWidth() : 80;
 		chokeValue *= (wchoke/(d*d));
-	else
-		return -80;
-
-	tileValue += chokeValue;
-
-	d = 5000;
-	for (unsigned i = 0; i < base->getRegion()->getPolygon().size(); i++) {
-		if (d > tile.getDistance(BWAPI::TilePosition(base->getRegion()->getPolygon()[i])))
-			d = tile.getDistance(BWAPI::TilePosition(base->getRegion()->getPolygon()[i]));
+		tileValue -= chokeValue;
 	}
 
-	if (d != 0)
-		polyValue = wpoly/(d*d);
-	else
-		polyValue = wpoly;
+	d = 1e37;
+	for (unsigned i = 0; i < region.size(); i++) {
+		double dist = 0;
+		for (unsigned j = 0; j < 4; j++)
+			dist += region[i].distance(set[j]);
+		dist /= 4;
+		
+		if (d > dist)
+			d = dist;
+	}
+
+	if (d == 0)
+		return 80;
+	
+	polyValue = wpoly/(d*d);
 	tileValue += polyValue;
 
+	if (tileValue > 80)
+		return 80;
+	if (tileValue < -80)
+		return -80;
+	
 	return tileValue;
 }
 
@@ -116,7 +135,7 @@ void Cerebrate::Infrastructure::BaseInfo::draw(bool heat) const {
 
 				unsigned walk = walkTiles(k);
 
-				int strength = 255*(tileValue(k)+15)/17;
+				int strength = 255*(tileValue(k)+40)/40;
 				strength = strength > 255 ? 255 : strength;
 				strength = strength < 0 ? 0 : strength;
 
@@ -248,13 +267,19 @@ void Cerebrate::Infrastructure::BaseInfo::draw(bool heat) const {
 	}
 
 	for (unsigned i = 0; i < patches.size(); i++)
-		BWAPI::Broodwar->drawDotMap(patches[i].position.first, patches[i].position.second, BWAPI::Colors::Yellow);
+		if (patches[i].position.first || patches[i].position.second) {
+			BWAPI::Broodwar->drawLineMap(patches[i].position.first, patches[i].position.second, position.x(), position.y(), BWAPI::Colors::Yellow);
+			BWAPI::Broodwar->drawCircleMap(patches[i].position.first, patches[i].position.second, 3, BWAPI::Colors::Yellow);
+		}
 
 	BWTA::Polygon poly = base->getRegion()->getPolygon();
-	for (unsigned k = 0; k < poly.size()-1; k++)
+	unsigned k = 0;
+	for (; k < poly.size()-1; k++)
 		BWAPI::Broodwar->drawLineMap(poly[k].x(),poly[k].y(), poly[k+1].x(),poly[k+1].y(), BWAPI::Colors::Orange);
+	BWAPI::Broodwar->drawLineMap(poly[k].x(),poly[k].y(), poly[0].x(),poly[0].y(), BWAPI::Colors::Orange);
 }
 
+//// Location
 
 void Cerebrate::Infrastructure::Location::addBase(Cerebrate::Infrastructure::BaseInfo* b) {
 	double distance = b->base->getGroundDistance(info->base);
@@ -289,6 +314,7 @@ void Cerebrate::Infrastructure::Location::sort() {
 		}
 }
 
+//// StartLocation
 
 void Cerebrate::Infrastructure::StartLocation::addBase(Cerebrate::Infrastructure::BaseInfo* b) {
 	double distance = b->base->getGroundDistance(info->base);
@@ -312,6 +338,7 @@ void Cerebrate::Infrastructure::StartLocation::sort() {
 		}
 }
 
+////BaseGraph
 
 Cerebrate::Base Cerebrate::Infrastructure::BaseGraph::main() const { return startLocations[selfIndex].info->base; }
 Cerebrate::Infrastructure::StartLocation const& Cerebrate::Infrastructure::BaseGraph::self() const { return startLocations[selfIndex]; }
@@ -344,8 +371,13 @@ void Cerebrate::Infrastructure::BaseGraph::populate() {
 		bases.push_back(BaseInfo());
 		bases[bases.size()-1].base = *base;
 		bases[bases.size()-1].region = TerrainAnalysis::convert((*base)->getRegion()->getPolygon());
-		for (std::set<Unit>::const_iterator i = (*base)->getStaticMinerals().begin(); i != (*base)->getStaticMinerals().end(); i++)
+		for (std::set<Unit>::const_iterator i = (*base)->getStaticMinerals().begin(); i != (*base)->getStaticMinerals().end(); i++) {
 			bases[bases.size()-1].patches.push_back(Resource(*i,1500));
+			if ((*i)->isVisible()) {
+				bases[bases.size()-1].patches[bases[bases.size()-1].patches.size()-1].position.first = (*i)->getPosition().x();
+				bases[bases.size()-1].patches[bases[bases.size()-1].patches.size()-1].position.second = (*i)->getPosition().y();
+			}
+		}
 		bases[bases.size()-1].owner = None;
 		for (std::set<Unit>::const_iterator i = (*base)->getGeysers().begin(); i != (*base)->getGeysers().end(); i++)
 			bases[bases.size()-1].geysers.push_back(Resource(*i,5000));
@@ -376,6 +408,19 @@ void Cerebrate::Infrastructure::BaseGraph::populate() {
 	selfIndex = enemyIndex = startLocations.size();
 }
 void Cerebrate::Infrastructure::BaseGraph::update() {
+	for (unsigned j = 0; j < self().info->patches.size(); j++)
+		if (self().info->patches[j].patch->isVisible()) {
+			self().info->patches[j].ammount = self().info->patches[j].patch->getResources();
+			self().info->patches[j].position.first = self().info->patches[j].patch->getPosition().x();
+			self().info->patches[j].position.second = self().info->patches[j].patch->getPosition().y();
+		}
+	for (unsigned j = 0; j < self().info->geysers.size(); j++)
+		if (self().info->geysers[j].patch->isVisible()) {
+			self().info->geysers[j].ammount = self().info->geysers[j].patch->getResources();
+			self().info->geysers[j].position.first = self().info->geysers[j].patch->getPosition().x();
+			self().info->geysers[j].position.second = self().info->geysers[j].patch->getPosition().y();
+		}
+
 	for (unsigned j = 0; j < self().natural.info->patches.size(); j++)
 		if (self().natural.info->patches[j].patch->isVisible()) {
 			self().natural.info->patches[j].ammount = self().natural.info->patches[j].patch->getResources();
@@ -443,20 +488,22 @@ void Cerebrate::Infrastructure::BaseGraph::update() {
 		aux /= 10000;
 		gas = aux + 0.5;
 
-		startLocations[selfIndex].natural.potential[i] = (nearMe*nearMe * farFromHim) * (minerals * patches*patches*patches * gas);
+		startLocations[selfIndex].natural.potential[i] = (nearMe * farFromHim) * (minerals * patches*patches*patches * gas);
 	}
 
 	startLocations[selfIndex].natural.sort();
 }
 
 void Cerebrate::Infrastructure::BaseGraph::draw() const {
-	BWAPI::Broodwar->drawCircleMouse(0,0,10,BWAPI::Color(TerrainAnalysis::in(self().info->region, BWAPI::Broodwar->getMousePosition()) ? 255 : 0,0,0), true);
-	
 	unsigned i;
 	BWAPI::Position position = self().info->base->getPosition();
 	BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),68,BWAPI::Colors::Blue);
 	BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),70,BWAPI::Colors::Green);
 	BWAPI::Broodwar->drawCircleMap(position.x(),position.y(),72,BWAPI::Colors::Blue);
+
+	BWTA::Polygon poly = self().info->base->getRegion()->getPolygon();
+	for (unsigned k = 0; k < poly.size()-1; k++)
+		BWAPI::Broodwar->drawLineMap(poly[k].x(),poly[k].y(), poly[k+1].x(),poly[k+1].y(), BWAPI::Colors::Orange);
 
 	for (i = 0; i < self().bases.size(); i++) {
 		position = self().bases[i]->base->getPosition();
@@ -478,7 +525,7 @@ void Cerebrate::Infrastructure::BaseGraph::draw() const {
 			BWAPI::Broodwar->drawTextMap(position.x(), position.y()+49, "E.G:%.0f",enemy().natural.ground[i]);
 		}
 }
-BWAPI::TilePosition Cerebrate::Infrastructure::BaseGraph::nextBase() const {
+BWAPI::TilePosition Cerebrate::Infrastructure::BaseGraph::nextBasePosition() const {
 	if (self().natural.info->owner == None)
 		return self().natural.info->base->getTilePosition();
 	else
@@ -486,6 +533,84 @@ BWAPI::TilePosition Cerebrate::Infrastructure::BaseGraph::nextBase() const {
 			if (self().natural.bases[i]->owner == None)
 				return self().natural.bases[i]->base->getTilePosition();
 }
+Cerebrate::Infrastructure::BaseInfo* Cerebrate::Infrastructure::BaseGraph::nextBase() const {
+	if (self().natural.info->owner == None)
+		return self().natural.info;
+	else
+		for (unsigned i = 0; i < self().natural.bases.size(); i++)
+			if (self().natural.bases[i]->owner == None)
+				return self().natural.bases[i];
+}
+
+//// BuilderDrone
+Cerebrate::Infrastructure::BuilderDrone::BuilderDrone(Unit d, BWAPI::UnitType b, BWAPI::TilePosition t)
+: drone(d), building(b), state(Cerebrate::Infrastructure::Moving),target(t) {
+	center.x() = target.x()*32 + building.tileWidth()*16;
+	center.y() = target.y()*32 + building.tileHeight()*16;
+}
+
+//// BuilderSet
+void Cerebrate::Infrastructure::BuilderSet::act() {
+	for (unsigned i = 0; i < builders.size(); i++)
+		switch(builders[i].state) {
+			case Cerebrate::Infrastructure::Moving:
+				if (builders[i].drone->getPosition() != builders[i].center)
+					builders[i].drone->move(builders[i].center);
+				else
+					builders[i].state = Cerebrate::Infrastructure::Building;
+				break;
+			case Cerebrate::Infrastructure::Building:
+				if (builders[i].drone->isUnderAttack()) {
+					if (builders[i].drone->isMorphing())
+						builders[i].drone->cancelMorph();
+					builders[i].state = Cerebrate::Infrastructure::Fleeing;
+				} else if (!builders[i].drone->isConstructing())
+					builders[i].drone->build(builders[i].target,builders[i].building);
+				break;
+			case Cerebrate::Infrastructure::Fleeing:
+				if (!builders[i].drone->isUnderAttack())
+					builders[i].state = Cerebrate::Infrastructure::Moving;
+				break;
+		}
+}
+
+void Cerebrate::Infrastructure::BuilderSet::draw() const {
+	for (unsigned i = 0; i < builders.size(); i++) {
+		BWAPI::Color color;
+		char* str;
+		switch(builders[i].state) {
+			case Cerebrate::Infrastructure::Moving:
+				str = "\x11 Moving";
+				color = BWAPI::Colors::Orange;
+				break;
+			case Cerebrate::Infrastructure::Building:
+				str = "\x17 Fleeing";
+				color = BWAPI::Colors::Purple;
+				break;
+			case Cerebrate::Infrastructure::Fleeing:
+				str = "\x10 Building";
+				color = BWAPI::Colors::Yellow;
+				break;
+		}
+		
+		BWAPI::Broodwar->drawTextMap(builders[i].drone->getPosition().x()-12, builders[i].drone->getPosition().y()-4, str);
+		BWAPI::Broodwar->drawLineMap(builders[i].drone->getPosition().x(), builders[i].drone->getPosition().y(),
+									 builders[i].center.x(), builders[i].center.y(), color);
+		BWAPI::Broodwar->drawBoxMap(builders[i].target.x()*32, builders[i].target.y()*32,
+									builders[i].target.x()*32+builders[i].building.tileWidth()*32,
+									builders[i].target.y()*32+builders[i].building.tileHeight()*32, color);
+		
+	}
+}
+
+bool Cerebrate::Infrastructure::BuilderSet::in(Unit d) const {
+	for(unsigned i = 0; i < builders.size(); i++)
+		if (builders[i].drone == d)
+			return true;
+	return false;
+}
+
+//// Hatchery
 
 bool Cerebrate::Infrastructure::Hatchery::isOccupied(BWAPI::TilePosition pos) const {
 	if (!BWAPI::Broodwar->isBuildable(pos,true))
@@ -530,6 +655,7 @@ bool Cerebrate::Infrastructure::Hatchery::canWall() const {
 	return adjacents.size() < 3;
 }
 
+//// Builder
 
 Cerebrate::Unitset Cerebrate::Infrastructure::Builder::getLarva() const {
 	Unitset ret;
@@ -599,11 +725,25 @@ void Cerebrate::Infrastructure::Builder::draw() const {
 										 hatcheries[i].hatch->getPosition().y(),
 										 "MACRO");
 		else {
-			if (hatcheries[i].base == bases->self().info)
+			if (hatcheries[i].base == bases->self().info) {
 				BWAPI::Broodwar->drawTextMap(hatcheries[i].hatch->getPosition().x() - 10,
 											 hatcheries[i].hatch->getPosition().y(),
 											 "MAIN");
-			else if (hatcheries[i].base == bases->self().natural.info)
+			 	for (int k = -5; k < 6; k++)
+					for (int j = -5; j < 6; j++) {
+						BWAPI::TilePosition newp(bases->self().info->base->getTilePosition());
+						newp.x() += k;
+						newp.y() += j;
+						
+						BWAPI::Position newpp(newp);
+						newpp.x() += 15;
+						newpp.y() += 15;
+						
+						double v = getValue(3,2,newp,true);
+						
+						BWAPI::Broodwar->drawTextMap(newpp.x(), newpp.y(), "%.3f", v);
+					}
+			} else if (hatcheries[i].base == bases->self().natural.info)
 				BWAPI::Broodwar->drawTextMap(hatcheries[i].hatch->getPosition().x() - 10,
 											 hatcheries[i].hatch->getPosition().y(),
 											 "NATURAL [%s]", (hatcheries[i].canWall() ? "YES" : "NO"));
@@ -611,19 +751,36 @@ void Cerebrate::Infrastructure::Builder::draw() const {
 				BWAPI::Broodwar->drawTextMap(hatcheries[i].hatch->getPosition().x() - 10,
 											 hatcheries[i].hatch->getPosition().y(),
 											 "BASE [%s]", (hatcheries[i].canWall() ? "YES" : "NO"));
+			
+			for (unsigned j = 0; j < hatcheries[i].wall.size(); j++)
+				BWAPI::Broodwar->drawBoxMap(hatcheries[i].wall[j].position.x()*32, hatcheries[i].wall[j].position.y()*32,
+											hatcheries[i].wall[j].position.x()*32 + hatcheries[i].wall[j].x*32,
+											hatcheries[i].wall[j].position.y()*32 + hatcheries[i].wall[j].y*32, BWAPI::Colors::Brown);
 		}
 
 	if (bases)
 		bases->draw();
+	builders.draw();
 }
-void Cerebrate::Infrastructure::Builder::updateHatchs() {
-	for (unsigned i = 0; i < hatcheries.size(); i++)
-		if (!hatcheries[i].base)
-			for (unsigned j = 0; j < bases->bases.size(); j++)
-				if (hatcheries[i].hatch->getPosition() == bases->bases[j].base->getPosition()) {
-					hatcheries[i].base = &bases->bases[j];
-					break;
-				}
+void Cerebrate::Infrastructure::Builder::act() {
+	builders.act();
+}
+void Cerebrate::Infrastructure::Builder::update(Industry::Manager& man) {
+	if (bases)
+		for (unsigned i = 0; i < hatcheries.size(); i++)
+			if (!hatcheries[i].base)
+				for (unsigned j = 0; j < bases->bases.size(); j++)
+					if (hatcheries[i].hatch->getPosition() == bases->bases[j].base->getPosition()) {
+						hatcheries[i].base = &bases->bases[j];
+						bases->bases[j].owner = Mine;
+						break;
+					}
+	for (unsigned i = 0; i < builders.builders.size(); i++)
+		if (!builders.builders[i].drone->exists()) {
+			man.add(Industry::Production(builders.builders[i].building, 0.91));
+			builders.builders.erase(builders.builders.begin()+i);
+			i--;
+		}
 }
 
 bool Cerebrate::Infrastructure::Builder::isOccupied(BWAPI::TilePosition pos) const {
@@ -633,9 +790,7 @@ bool Cerebrate::Infrastructure::Builder::isOccupied(BWAPI::TilePosition pos) con
 	return false;
 }
 
-double Cerebrate::Infrastructure::Builder::getValue(int x, int y, BWAPI::TilePosition position) {
-	double ret = 0;
-		
+double Cerebrate::Infrastructure::Builder::getValue(BWAPI::TilePosition position, bool creep) const {
 	if (bases) {
 		unsigned i = 0;
 		for (; i < bases->bases.size(); i++)
@@ -645,26 +800,37 @@ double Cerebrate::Infrastructure::Builder::getValue(int x, int y, BWAPI::TilePos
 		if (i == bases->bases.size())
 			return -80;
 
+		double ret = bases->bases[i].tileValue(position) +
+						(isOccupied(position) ? -80 : 0);
+		if (creep)
+			if (!BWAPI::Broodwar->hasCreep(position))
+				ret -= 160;
+
+		return ret;
+	}
+	
+	return 0;
+}
+double Cerebrate::Infrastructure::Builder::getValue(int x, int y, BWAPI::TilePosition position, bool creep) const {
+	double ret = 0;
 		for (int i = 0; i < x; i++)
 			for (int j = 0; j < y; j++) {
 				BWAPI::TilePosition new_pos(position.x()+i, position.y()+j);
-				ret +=	bases->bases[i].tileValue(new_pos) +
-						(isOccupied(new_pos) ? -80 : 0);
+				ret += getValue(new_pos,creep);
 			}
-	}
 	
 	return ret;
 }
 
-bool Cerebrate::Infrastructure::Builder::onCreep(int x, int y, BWAPI::TilePosition position) {
+bool Cerebrate::Infrastructure::Builder::onCreep(int x, int y, BWAPI::TilePosition position) const {
 	for (int i = 0; i < x; i++)
 		for (int j = 0; j < y; j++)
-			if (!BWAPI::Broodwar->hasCreep(position.x()+i,position.y()+j))
-				return false;
-	return true;
+			if (BWAPI::Broodwar->hasCreep(position.x()+i,position.y()+j))
+				return true;
+	return false;
 }
 
-BWAPI::Position Cerebrate::Infrastructure::Builder::spiral(BWAPI::Position center, Cerebrate::Infrastructure::BuildingSlot& slot, BWAPI::TilePosition position) {
+BWAPI::Position Cerebrate::Infrastructure::Builder::spiral(BWAPI::Position center, Cerebrate::Infrastructure::BuildingSlot& slot, BWAPI::TilePosition position, bool creep) const {
 	struct Position {
 		int x;
 		int y;
@@ -681,43 +847,58 @@ BWAPI::Position Cerebrate::Infrastructure::Builder::spiral(BWAPI::Position cente
 		
 		Candidate(BWAPI::TilePosition& pos, double v) : position(pos),value(v) { }
 		
-		static bool less(Candidate a, Candidate b) { return a.value < b.value; }
+		bool operator<(Candidate b) const { return value < b.value; }
 	};
 	
 	std::vector< Candidate > candidates;
 	
-	bool test = TerrainAnalysis::in(bases->self().info->region,bases->self().info->region[0].origin);
-	
-	getValue(slot.x,slot.y,position);
-	
-	for (int i = 0; i <= target.x; i++) {
-		current.x += i;
-		candidates.push_back(Candidate(current.tile(), getValue(slot.x,slot.y,current.tile())));
-	}
-	target.x += slot.x;
-	
-	for (int sign = 1; onCreep(slot.x,slot.y,current.tile()); sign = -sign, target.x++, target.y++) {
-		for (int i = 0; i < target.y; i++)
-			if (onCreep(slot.x,slot.y,current.tile())) {
+	if (creep) {
+		for (int i = 0; i <= target.x; i++) {
+			current.x += i;
+			candidates.push_back(Candidate(current.tile(), getValue(slot.x,slot.y,current.tile(),creep)));
+		}
+		target.x += slot.x;
+		
+		for (int sign = 1; onCreep(slot.x,slot.y,current.tile()); sign = -sign, target.x++, target.y++) {
+			for (int i = 0; i < target.y; i++) {
 				current.y += i * sign;
-				candidates.push_back(Candidate(current.tile(), getValue(slot.x,slot.y,current.tile())));
-			} else
-				break;
+				candidates.push_back(Candidate(current.tile(), getValue(slot.x,slot.y,current.tile(),creep)));
+			}
 
-		if (onCreep(slot.x,slot.y,current.tile())) {
-			for (int i = 0; i < target.x; i++)
-				if (onCreep(slot.x,slot.y,current.tile())) {
-					current.x -= i * sign;
-					candidates.push_back(Candidate(current.tile(), getValue(slot.x,slot.y,current.tile())));
-				} else
-					break;
-		} else
-			break;
+			for (int i = 0; i < target.x; i++) {
+				current.x -= i * sign;
+				candidates.push_back(Candidate(current.tile(), getValue(slot.x,slot.y,current.tile(),creep)));
+			}
+		}
+		
+		std::sort(candidates.begin(), candidates.end());
+		slot.position = candidates.back().position;
+	} else {
+		bool changed = true;
+		slot.position = position;
+		double current_value = getValue(slot.x,slot.y,position,creep);
+		
+		while(changed) {
+			for (int i = -1; i < 2; i++)
+				for (int j = -1; j < 2; j++)
+					if (i || j) {
+						BWAPI::TilePosition new_pos(slot.position.x()+i, slot.position.y()+j);
+						double value = getValue(slot.x,slot.y,new_pos,creep);
+						if (value > current_value)
+							candidates.push_back(Candidate(new_pos,value));
+					}
+			std::sort(candidates.begin(),candidates.end());
+			
+			if (candidates.back().position == slot.position)
+				changed = false;
+			else {
+				slot.position = candidates.back().position;
+				current_value = candidates.back().value;
+			}
+			
+			candidates.clear();
+		}
 	}
-	
-	std::sort(candidates.begin(), candidates.end(), Candidate::less);
-	slot.position = candidates.back().position;
-	
 	return BWAPI::Position(slot.position);
 }
 
@@ -727,21 +908,44 @@ bool Cerebrate::Infrastructure::Builder::build(Cerebrate::Resources::Miner& mine
 	else if (structure == Spore)
 		;
 	else {
-		for(unsigned i = 0; i < hatcheries.size(); i++)
-			if (hatcheries[i].canWall()) {
-				for (unsigned j = 0; j < hatcheries[i].wall.size(); j++)
-					if (hatcheries[i].wall[j].x == structure.tileWidth() &&
-						hatcheries[i].wall[j].y == structure.tileHeight())
-						return miner.getDrone(BWAPI::Position(hatcheries[i].wall[j].position))->build(hatcheries[i].wall[j].position,structure);
-			}
-		
 		BuildingSlot s;
 		s.x = structure.tileWidth();
 		s.y = structure.tileHeight();
+		s.position = BWAPI::TilePosition(0,0);
 		
-		Unit target = miner.getDrone(spiral(BWAPI::Position(4,3),s,hatcheries[0].hatch->getTilePosition()));
-		if (target)
-			return target->build(s.position,structure);
+		for(unsigned i = 0; i < hatcheries.size(); i++)
+			if (hatcheries[i].canWall()) {
+				for (unsigned j = 0; j < hatcheries[i].wall.size(); j++)
+					if (hatcheries[i].wall[j].x == s.x &&
+						hatcheries[i].wall[j].y == s.y)
+						s.position = hatcheries[i].wall[j].position;
+			}
+		
+		bool expand = false;
+		BuildingSlot macro;
+		macro.x = 4;
+		macro.y = 3;
+		
+		if (!s.position.x() && !s.position.y()) {
+			if (structure.isResourceDepot()) {
+				expand = true;
+				
+				s.position = bases->nextBasePosition();
+				
+				//spiral(BWAPI::Position(4,3),macro,s.position,false);
+			} else
+				spiral(BWAPI::Position(4,3),s,hatcheries[0].hatch->getTilePosition(), true);
+		}
+		
+		Unit target = miner.getDrone(BWAPI::Position(s.position));
+		if (target) {
+			builders.builders.push_back(BuilderDrone(target,structure,s.position));
+			/*if (expand) {
+				hatcheries.push_back(Hatchery(target));
+				//hatcheries.back().wall.push_back(macro);
+			}*/
+			return true;
+		}
 		return false;
 	}
 }

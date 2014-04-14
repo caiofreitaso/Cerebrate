@@ -25,7 +25,16 @@ bool Cerebrate::TerrainAnalysis::in(Cerebrate::TerrainAnalysis::Polygon& p, BWAP
 	return in(p,Point(a));
 }
 bool Cerebrate::TerrainAnalysis::in(Cerebrate::TerrainAnalysis::Polygon& p, BWAPI::TilePosition a) {
-	return in(p,Point(a));
+	Point pos(a);
+	
+	unsigned count = 0;
+	for (unsigned i = 0; i < 8; i++) {
+		if (in(p,pos))
+			count++;
+		pos.x += 4;
+	}
+			
+	return count > 4;
 }
 
 

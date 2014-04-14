@@ -6,8 +6,7 @@
 #include <fstream>
 #endif
 
-#include "Economy.h"
-#include "Resources.h"
+#include "Production.h"
 #include "Intelligence.h"
 
 namespace Cerebrate {
@@ -59,88 +58,6 @@ namespace Cerebrate {
 		return !u->exists() || u->isLockedDown() || u->isMaelstrommed() || u->isStasised() ||
 				u->isLoaded() || u->isUnpowered() || u->isStuck() || !u->isCompleted() || u->isConstructing();
 	}
-	struct Production_Test {
-		BWAPI::UnitType type;
-		BWAPI::TechType tech;
-		bool unit;
-		double priority;
-
-		Production_Test(BWAPI::UnitType t, double p) : type(t),unit(true),priority(p) { }
-		Production_Test(BWAPI::TechType t, double p) : tech(t),unit(false),priority(p) { }
-	};
-	bool compare_Test(Production_Test a, Production_Test b) { return a.priority > b.priority; }
-
-	class ProductionQueue_Test {
-		std::vector<Production_Test> _data;
-		public:
-			void add(Production_Test p) { _data.push_back(p); std::sort(_data.begin(),_data.end(),compare_Test); }
-
-			Production_Test& top() { return _data[0]; }
-			Production_Test const& top() const { return _data[0]; }
-
-			Production_Test& operator[](unsigned i) { return _data[i]; }
-			Production_Test const& operator[](unsigned i) const { return _data[i]; }
-
-			void pop() { _data.erase(_data.begin()); }
-
-			unsigned size() const { return _data.size(); }
-
-			void update(double priorityThreshold) {
-				if (_data.size())
-					for (std::vector<Production_Test>::iterator i = _data.begin(); i != _data.end();) {
-						if (i->priority < priorityThreshold || i->type == Drone || i->type == Overlord) {
-							_data.erase(i);
-							i = _data.begin();
-						} else
-							i++;
-					}
-			}
-
-			void morph(Unitset larvae) {
-				unsigned size = larvae.size();
-				size = size < _data.size() ? size : _data.size();
-
-				unsigned i = 0;
-				for (Unitset::iterator larva = larvae.begin(); larva != larvae.end() && i < size; larva++, i++) {
-					if ((*larva)->morph(top().type))
-						_data.erase(_data.begin());
-				}
-			}
-
-			void build(Unit drone, BWAPI::TilePosition position) { drone->build(position,top().unit); }
-
-			void research(UnitManager const& units) {
-				(*units.getType(top().tech.whatResearches()).begin())->research(top().tech);
-			}
-
-			Production_Test& overlord() {
-				unsigned i = 0;
-				for (; i < _data.size(); i++)
-					if (_data[i].unit)
-						if (_data[i].type == Overlord)
-							break;
-				return _data[i];
-			}
-
-			Production_Test& hatchery() {
-				unsigned i = 0;
-				for (; i < _data.size(); i++)
-					if (_data[i].unit)
-						if (_data[i].type == Hatch)
-							break;
-				return _data[i];
-			}
-	};
-
-
-	struct Production {
-		BWAPI::UnitType type;
-		double priority;
-
-		Production(BWAPI::UnitType t, double p) : type(t),priority(p) { }
-	};
-	bool compare(Production a, Production b) { return a.priority > b.priority; }
-	typedef std::vector<Production> ProductionQueue;
 
 	//Need to research
 	namespace Technology {
@@ -154,131 +71,7 @@ namespace Cerebrate {
 			std::vector<BWAPI::UpgradeType> techQueue;
 		};
 	};
-	//Need for unit
-	namespace Industry {
-		#pragma region Function
-		int* remainingTimeForLarva(Infrastructure::Builder& builder) {
-			int* ret = new int[builder.hatcheries.size()];
-
-			for (unsigned i = 0; i < builder.hatcheries.size(); i++)
-				ret[i] = builder.hatcheries[i].hatch->getRemainingTrainTime();
-			return ret;
-		}
-
-		double supply_diff(Player p, double supplyUsed) {
-			double supply = p->supplyTotal() - supplyUsed;
-			supply = (1 - exp(1.5*supply - 4.5))/(1 + exp(1.5*supply - 4.5));
-			supply += 1;
-			supply /= 2;
-			return supply * supply;
-		}
-		#pragma endregion
-
-		struct Manager {
-			std::vector<Production> unitQueue;
-
-			double drones;
-			double overlords;
-
-			void needForOverlords(Infrastructure::Builder const& builder, UnitManager const& units, Player p) {
-				if (units.eggsMorphing(Overlord) != 0 || units.notCompleted(Overlord) != 0) {
-					overlords = 0;
-				} else {
-					int extraSupply = 0;
-					unsigned larvaCount = builder.getLarva().size();
-
-					unsigned maxIndex = larvaCount < unitQueue.size() ? larvaCount : unitQueue.size();
-
-					for (unsigned i = 0; i < maxIndex; i++)
-						if (!unitQueue[i].type.isWorker())
-							extraSupply += unitQueue[i].type.supplyRequired();
-
-					if (extraSupply)
-						;
-					else
-						overlords = supply_diff(p, p->supplyUsed());
-				}
-			}
-			void needForDrones(Infrastructure::Builder const& builder, Economy::Economist const& economist) {
-				double	incomePerHatch = economist.income[0].mineral/(builder.hatcheries.size()+1);
-				double	nope = 7*incomePerHatch*incomePerHatch;
-				if (nope > 1)
-					nope = 1;
-				drones = 1 - nope;
-				drones *= drones;
-				drones *= drones;
-			}
-
-			void clean(double priorityThreshold, UnitManager units) {
-				/*if (unitQueue.size())
-					for (ProductionQueue::iterator i = unitQueue.begin(); i != unitQueue.end();) {
-						if (i->priority < priorityThreshold || i->type == Drone || i->type == Overlord) {
-							unitQueue.erase(i);
-							i = unitQueue.begin();
-						} else
-							i++;
-					}
-				*/
-			}
-			void queueCivil(double droneThreshold, double overlordThreshold) {
-				//if (drones >= droneThreshold)
-				//	unitQueue.push_back(Production(Drone,drones));
-				//if (overlords >= overlordThreshold)
-				//	unitQueue.push_back(Production(Overlord,overlords));
-				//std::sort(unitQueue.begin(), unitQueue.end(), compare);
-			}
-
-			void morph(Infrastructure::Builder& builder) {
-				Unitset larvae = builder.getLarva();
-
-				unsigned size = larvae.size();
-				size = size < unitQueue.size() ? size : unitQueue.size();
-
-				for (Unitset::iterator larva = larvae.begin(); larva != larvae.end() && unitQueue.size(); larva++) {
-					if ((*larva)->morph(unitQueue[0].type))
-						unitQueue.erase(unitQueue.begin());
-					break;
-				}
-			}
-			
-			void expand(Infrastructure::Builder& builder, Resources::Miner& mines) {
-				if (mines.getDrone(BWAPI::Position(builder.nextBase()))->build(builder.nextBase(), Hatch))
-					unitQueue.erase(unitQueue.begin());
-			}
-			
-			void build(Infrastructure::Builder& builder, Resources::Miner& mines) {
-				if (builder.build(mines,unitQueue[0].type))
-					unitQueue.erase(unitQueue.begin());
-			}
-			
-			void pop(Infrastructure::Builder& builder, Resources::Miner& mines) {
-				if (unitQueue.size()){
-					if (unitQueue[0].type.isResourceDepot())
-						expand(builder,mines);
-					else if (unitQueue[0].type.isBuilding())
-						build(builder,mines);
-					else
-						morph(builder);
-				}
-			}
-		};
-	};
-	//Need to attack
-	namespace Defense {
-		struct General {
-			double attack;
-			double defend;
-
-			void update(Player player, UnitManager units) {
-				attack = player->supplyTotal() - units.getType(Drone).size();
-				attack = (1 - exp(-0.4*attack - 1.2))/(1 + exp(-0.4*attack - 1.2));
-				attack += 1;
-				attack /= 2;
-				attack *= attack;
-				attack *= attack;
-			}
-		};
-	};
+	
 
 	struct Cerebrate {
 		Player player;
@@ -299,7 +92,9 @@ namespace Cerebrate {
 		};
 
 		Stage stage;
+
 		double passivity;
+		double strategies[5][3];
 
 		bool debug, makeDrones;
 		#ifdef SAVE_CSV
@@ -315,7 +110,7 @@ namespace Cerebrate {
 			Thresholds() : drones(.25),overlords(.75),priority(.5) { }
 		} thresholds;
 
-		Cerebrate(bool debug = true) : player(0),debug(debug),makeDrones(true),stage(Action),passivity(0.3) { }
+		Cerebrate(bool debug = true) : player(0),debug(debug),makeDrones(true),stage(Action),passivity(0.7) { }
 		~Cerebrate() {
 			#ifdef SAVE_CSV
 			file.close();
@@ -348,7 +143,6 @@ namespace Cerebrate {
 		void setOpening() {
 			unsigned i = 0;
 			
-			double strategies[5][2];
 			double airdistance = 0, grounddistance = 0, naturaldist = 0;
 
 			if (publicWorks.bases) {				
@@ -380,43 +174,58 @@ namespace Cerebrate {
 
 			//Distance values
 
-			strategies[0][0] = 1 - (tanh(2*(grounddistance-4.8)) + 1)/2;
+			strategies[0][0] = 1 - (tanh(2*(grounddistance-5)) + 1)/2;
 			strategies[0][0] *= strategies[0][0];
 
-			strategies[1][0] = 1 - (tanh(0.75*(grounddistance-5)	) + 1)/2;
+			strategies[1][0] = grounddistance - 4.5;
+			strategies[1][0] *= strategies[1][0];
+			strategies[1][0] = exp(-strategies[1][0]/0.32);
 
-			strategies[2][0] = naturaldist - 3.25;
+			strategies[2][0] = grounddistance - 5;
 			strategies[2][0] *= strategies[2][0];
-			strategies[2][0] = exp(-strategies[2][0]/0.16);
+			strategies[2][0] = exp(-strategies[2][0]/0.8);
 
-			strategies[3][0] = (tanh(1.5*(naturaldist-3.3)) + 1)/2;
+			strategies[3][0] = grounddistance - 5.5;
+			strategies[3][0] *= strategies[3][0];
+			strategies[3][0] = exp(-strategies[3][0]/0.64);
 
-			strategies[4][0] = 1 - (tanh(2.25*(airdistance-2.3)) + 1)/2;
+			strategies[4][0] = (tanh(grounddistance-4.5) + 1)/2;
 
-			//Passiveness valuess
+			//Passiveness values
 			
-			strategies[0][1] = exp(-(passivity-0.2)*(passivity-0.2)/0.08);
-			strategies[1][1] = exp(-(passivity-0.3)*(passivity-0.3)/0.12);
-			strategies[2][1] = exp(-(passivity-0.43)*(passivity-0.43)/0.06);
-			strategies[3][1] = (tanh(3*passivity-0.6)+1)/2;
-			strategies[4][1] = 1-(tanh(5*passivity-2.5)+1)/2;
-			strategies[4][1] *= strategies[4][1];
+			strategies[0][1] = 1-(tanh(5*passivity-2.5)+1)/2;
+			strategies[0][1] *= strategies[0][1];
+			
+			strategies[1][1] = passivity-0.2;
+			strategies[1][1] *= strategies[1][1];
+			strategies[1][1] = exp(-strategies[1][1]/0.08);
+			
+			strategies[2][1] = passivity-0.3;
+			strategies[2][1] *= strategies[2][1];
+			strategies[2][1] = exp(-strategies[2][1]/0.12);
+			
+			strategies[3][1] = passivity-0.5;
+			strategies[3][1] *= strategies[3][1];
+			strategies[3][1] = exp(-strategies[3][1]/0.06);
+			
+			strategies[4][1] = (tanh(2*(passivity-0.1)) + 1)/2;
+			
 
 			for (i = 0; i < 5; i++)
-				strategies[i][0] = strategies[i][0]+strategies[i][1]-strategies[i][0]*strategies[i][1];
+				strategies[i][2] = strategies[i][0]+strategies[i][1]-strategies[i][0]*strategies[i][1];
 
 			int maior = 0;
 			int segundomaior = 0;
 			for (i = 1; i < 5; i++)
-				if(strategies[i][0] > strategies[maior][0])
+				if(strategies[i][2] > strategies[maior][2])
 					maior = i;
 			if (maior == 0)
 				segundomaior = 1;
 			for (i = 1; i < 5; i++)
-				if (i != maior && strategies[i][0] > strategies[segundomaior][0])
+				if (i != maior && strategies[i][2] > strategies[segundomaior][2])
 					segundomaior = i;
 
-			double total = strategies[maior][0] + strategies[segundomaior][0];
+			double total = strategies[maior][2] + strategies[segundomaior][2];
 			double chances[5];
 			for(i = 0; i < 5; i++)
 				if (i == maior)
@@ -442,79 +251,71 @@ namespace Cerebrate {
 				}
 			}
 			switch(found) {
+				//5 pool
 				case 0:
-					industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Pool,1));
-					industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Drone,1));
+					industry.add(Industry::Production(Drone));
+					industry.add(Industry::Production(Pool));
+					industry.add(Industry::Production(Drone));
+					industry.add(Industry::Production(Drone));
 					for (i = 0; i < 3; i++)
-						industry.unitQueue.push_back(Production(Ling,1));
+						industry.add(Industry::Production(Ling));
 					break;
+				//9 speed
 				case 1:
 					for (i = 0; i < 5; i++)
-						industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Pool,1));
-					industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Overlord,1));
+						industry.add(Industry::Production(Drone));
+					industry.add(Industry::Production(Pool));
+					industry.add(Industry::Production(Drone));
+					industry.add(Industry::Production(Overlord));
+					for (i = 0; i < 3; i++)
+						industry.add(Industry::Production(Ling));
 					break;
+				//9 pool
 				case 2:
 					for (i = 0; i < 5; i++)
-						industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Overlord,1));
-					for (i = 0; i < 4; i++)
-						industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Pool,1));
+						industry.add(Industry::Production(Drone));
+					industry.add(Industry::Production(Pool));
+					industry.add(Industry::Production(Drone));
+					industry.add(Industry::Production(Overlord));
+					for (i = 0; i < 3; i++)
+						industry.add(Industry::Production(Ling));
 					break;
+				//12 pool
 				case 3:
 					for (i = 0; i < 5; i++)
-						industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Overlord,1));
-					for (i = 0; i < 4; i++)
-						industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Hatch,1));
+						industry.add(Industry::Production(Drone));
+					industry.add(Industry::Production(Overlord));
+					for (i = 0; i < 3; i++)
+						industry.add(Industry::Production(Drone));
+					industry.add(Industry::Production(Pool));
+					industry.add(Industry::Production(Hatch));
+					for (i = 0; i < 3; i++)
+						industry.add(Industry::Production(Ling));
 					break;
+				//12 hatch
 				case 4:
 					for (i = 0; i < 5; i++)
-						industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Overlord,1));
-					for (i = 0; i < 5; i++)
-						industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Pool,1));
-					industry.unitQueue.push_back(Production(Extractor,1));
-					industry.unitQueue.push_back(Production(Lair,1));
-					industry.unitQueue.push_back(Production(Ling,1));
-					industry.unitQueue.push_back(Production(Ling,1));
-					industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Overlord,1));
-					industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Drone,1));
-					industry.unitQueue.push_back(Production(Overlord,1));
-					industry.unitQueue.push_back(Production(Overlord,1));
-					industry.unitQueue.push_back(Production(Muta,1));
-					industry.unitQueue.push_back(Production(Muta,1));
-					industry.unitQueue.push_back(Production(Muta,1));
-					industry.unitQueue.push_back(Production(Muta,1));
-					industry.unitQueue.push_back(Production(Muta,1));
-					industry.unitQueue.push_back(Production(Muta,1));
-					industry.unitQueue.push_back(Production(Muta,1));
-					industry.unitQueue.push_back(Production(Muta,1));
+						industry.add(Industry::Production(Drone));
+					industry.add(Industry::Production(Overlord));
+					for (i = 0; i < 3; i++)
+						industry.add(Industry::Production(Drone));
+					industry.add(Industry::Production(Hatch));
+					industry.add(Industry::Production(Pool));
 					break;
 			}
 		}
 
 		void update() {
-			finances.update(player, BWAPI::Broodwar->getFrameCount(), mines.getAllMiners().size());
 			#ifdef SAVE_CSV
 			file << player->gatheredMinerals() - 50 << "," << BWAPI::Broodwar->getAPM() << "\n";
 			#endif
-			mines.update();
-			industry.needForDrones(publicWorks, finances);
-			industry.needForOverlords(publicWorks, allUnits, player);
+			publicWorks.update(industry);
+			mines.update();			
+			
 			if (publicWorks.bases)
 				publicWorks.bases->update();
+			
+			industry.update(0.3,publicWorks,mines,finances);
 		}
 		void act() {
 			if (BWAPI::Broodwar->isReplay() || !BWAPI::Broodwar->getFrameCount())
@@ -531,22 +332,18 @@ namespace Cerebrate {
 			if (BWAPI::Broodwar->getFrameCount() % BWAPI::Broodwar->getLatencyFrames() != 0)
 				return;
 
-			//industry.clean(thresholds.priority, allUnits);
-			//if (makeDrones)
-			//	industry.queueCivil(thresholds.drones, thresholds.overlords);
-
-			industry.pop(publicWorks,mines);
-
+			publicWorks.act();
 			mines.act();
-
+			
 			for (Unitset::iterator u = allUnits.units.begin(); u != allUnits.units.end(); u++) {
 				if (isntValid(*u))
 					continue;
 
 				if ((*u)->isIdle()) {
-					if ((*u)->getType().isWorker())
-						mines.idleWorker(*u);
-					else {
+					if ((*u)->getType().isWorker()) {
+						if (!publicWorks.builders.in(*u))
+							mines.idleWorker(*u);
+					} else {
 					}
 				}
 			}
@@ -554,30 +351,28 @@ namespace Cerebrate {
 		void draw() {
 			unsigned i = 0;
 
-			#pragma region Base
 			BWAPI::Broodwar->setTextSize(0);
+			
 			publicWorks.draw();
-			#pragma endregion
-
-			#pragma region Resource
 			mines.draw();
-			#pragma endregion
+			
 
 			#pragma region Text
 			BWAPI::Broodwar->setTextSize(2);
 			BWAPI::Broodwar->drawTextScreen(300, 0, "FPS: %0d", BWAPI::Broodwar->getFPS());
 			BWAPI::Broodwar->setTextSize(0);
 			BWAPI::Broodwar->drawTextScreen(305, 16, "APM: %d", BWAPI::Broodwar->getAPM());
-			BWAPI::Broodwar->drawTextScreen(5, 0, "Income: %.2f min (%.3f per drone)\t%.2f gas\t[%d]", finances.income[0].mineral, finances.income[0].mineral/allUnits.getType(Drone).size(), finances.income[0].gas, BWAPI::Broodwar->getFrameCount());
 			BWAPI::Broodwar->drawTextScreen(5, 10, "HATCHERIES: %d, %d", publicWorks.hatcheries.size(), mines.minerals.size());
-			BWAPI::Broodwar->drawTextScreen(5, 20, "Need for a) drones: %.2f (%+.0f)\tb) overlords: %.2f", industry.drones, (0.25/(finances.income[0].mineral/publicWorks.hatcheries.size()) - 1)*allUnits.getType(Drone).size(), industry.overlords);
-			BWAPI::Broodwar->drawTextScreen(5, 30, "Building a) drones: %d [%d]\tb) overlords: %d [%d]",
-				allUnits.eggsMorphing(Drone),allUnits.notCompleted(Drone),
-				allUnits.eggsMorphing(Overlord),allUnits.notCompleted(Overlord));
 
 			BWAPI::Broodwar->drawTextScreen(550, 50, "\x07 choke: %2.0f", Infrastructure::BaseInfo::wchoke);
-			BWAPI::Broodwar->drawTextScreen(550, 66, "\x07 poly:  %2.0f", Infrastructure::BaseInfo::wpoly);
-			BWAPI::Broodwar->drawTextScreen(550, 82, "\x07 patch: %2.0f", Infrastructure::BaseInfo::wpatch);
+			BWAPI::Broodwar->drawTextScreen(550, 60, "\x07 poly:  %2.0f", Infrastructure::BaseInfo::wpoly);
+			BWAPI::Broodwar->drawTextScreen(550, 70, "\x07 patch: %2.0f", Infrastructure::BaseInfo::wpatch);
+			
+			BWAPI::Broodwar->drawTextScreen(400, 50, "\x07 5pool:   %.3f %.3f = %.3f", strategies[0][0],strategies[0][1],strategies[0][2]);
+			BWAPI::Broodwar->drawTextScreen(400, 60, "\x07 9speed:  %.3f %.3f = %.3f", strategies[1][0],strategies[1][1],strategies[1][2]);
+			BWAPI::Broodwar->drawTextScreen(400, 70, "\x07 9pool:   %.3f %.3f = %.3f", strategies[2][0],strategies[2][1],strategies[2][2]);
+			BWAPI::Broodwar->drawTextScreen(400, 80, "\x07 12pool:  %.3f %.3f = %.3f", strategies[3][0],strategies[3][1],strategies[3][2]);
+			BWAPI::Broodwar->drawTextScreen(400, 90, "\x07 12hatch: %.3f %.3f = %.3f", strategies[4][0],strategies[4][1],strategies[4][2]);
 
 			std::ostringstream units_decl;
 			units_decl << "UNITS = ";
@@ -607,16 +402,10 @@ namespace Cerebrate {
 				BWAPI::Broodwar->setTextSize(1);
 				BWAPI::Broodwar->drawTextScreen(5, 50, "Queue:");
 				BWAPI::Broodwar->setTextSize(0);
-				for (i = 0; i < industry.unitQueue.size(); i++)
-					BWAPI::Broodwar->drawTextScreen(5,65+10*i,"\x04%s:%.3f",&industry.unitQueue[i].type.getName().c_str()[5],industry.unitQueue[i].priority);
+				for (i = 0; i < industry.queue.size(); i++)
+					BWAPI::Broodwar->drawTextScreen(5,65+10*i,"\x04%s:%.3f",industry.queue[i].name().c_str(),industry.queue[i].priority);
 			}
 			#pragma endregion
-
-			#pragma region Income Graph
-			finances.draw();
-			#pragma endregion
-
-			
 		}
 
 
@@ -683,7 +472,7 @@ namespace Cerebrate {
 				for (unsigned i = 0; i < target->publicWorks.hatcheries.size(); i++)
 					target->publicWorks.bases->expanded(target->publicWorks.hatcheries[i].hatch->getPosition());
 
-				target->publicWorks.updateHatchs();
+				target->publicWorks.update(target->industry);
 				target->setOpening();
 				/*Intelligence::BaseInfo::map = new Intelligence::Map(BWAPI::Broodwar->mapWidth(), BWAPI::Broodwar->mapHeight());
 				for (unsigned i = 0; i < Intelligence::BaseInfo::map->x; i++)
@@ -709,13 +498,7 @@ namespace Cerebrate {
 			_data.act();
 		}
 		virtual void onSendText(std::string text) {
-			if (!text.compare("expand")) {
-				BWAPI::TilePosition position = _data.publicWorks.nextBase();
-				Unit myDrone = _data.mines.getDrone(BWAPI::Position(position));
-				myDrone->build(position, Hatch);
-			} else if (!text.compare("drone")) {
-				_data.makeDrones = !_data.makeDrones;
-			} else if (!text.compare(0,6,"patch "))
+			if (!text.compare(0,6,"patch "))
 				Infrastructure::BaseInfo::wpatch = atof(&text.c_str()[6]);
 			else if (!text.compare(0,6,"choke "))
 				Infrastructure::BaseInfo::wchoke = atof(&text.c_str()[6]);

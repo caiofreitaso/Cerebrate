@@ -38,6 +38,8 @@ namespace Cerebrate {
 			
 			double length() const { return sqrt(x*x+y*y); }
 			
+			double distance(Point p) const { return (*this-p).length(); }
+			
 			private:
 				void init(BWAPI::Position p) {
 					x = p.x();
@@ -49,6 +51,22 @@ namespace Cerebrate {
 			
 			Segment(Segment const& c) : origin(c.origin), d(c.d) { }
 			Segment(Point a, Point b) : origin(a), d(b-a) { }
+			
+			double distance(Point p) const {
+				if (!d.x && !d.y)
+					return origin.distance(p);
+				
+				Point po = p - origin;
+				double t = po.x * d.x + po.y * d.y;
+				if (t < 0)
+					return origin.distance(p);
+				else if (t > 1)
+					return (origin+d).distance(p);
+				
+				Point projection = origin + t * d;
+				
+				return projection.distance(p);
+			}
 		};
 		
 		typedef std::vector<Segment> Polygon;
@@ -56,18 +74,21 @@ namespace Cerebrate {
 		struct Ray {
 			Point origin, d;
 			
-			Ray(Point a) : origin(a), d(Point(1,0)) { }
+			Ray(Point a) : origin(a), d(Point(0,1)) { }
 			Ray(Point a, Point b) : origin(a), d(~(b-a)) { }
 			
 			bool intersect(Segment a) const {
-				double seg = a.origin.y*d.x + d.y*origin.x - origin.y*d.x - d.y*a.origin.x;
-				seg /= a.d.x*d.y - a.d.y*d.x;
+				double rs = a.d.x*d.y - d.x*a.d.y;
 				
-				if (seg < -0.00001 || seg > 1.00001)
-					return false;
+				if (rs > -0.00001 && rs < 0.00001)
+					return true;
 				
-				double ret = (a.origin.x + a.d.x*seg - origin.x)/d.x;
-				return ret > -0.00001;
+				Point qp = origin - a.origin;
+				
+				double t = (qp.x*d.y - d.x*qp.y)/rs;
+				double u = (qp.x*a.d.y - a.d.x*qp.y)/rs;
+				
+				return (t > -0.00001 && t < 1.00001 && u > -0.00001);
 			}
 		};
 
@@ -78,6 +99,7 @@ namespace Cerebrate {
 		bool in(Polygon& p, BWAPI::TilePosition a);
 	};
 
+	
 	typedef BWAPI::Unit* Unit;
 	typedef BWAPI::Player* Player;
 

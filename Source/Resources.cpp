@@ -241,7 +241,7 @@ void Cerebrate::Resources::Miner::draw() {
 						break;
 				}
 				BWAPI::Broodwar->drawLineMap(drone.x(), drone.y(), mineral.x(), mineral.y(), color);
-				BWAPI::Broodwar->drawTextMap(drone.x()-8, drone.y()-4, "%s", state.c_str());
+				BWAPI::Broodwar->drawTextMap(drone.x()-8, drone.y()-4, state.c_str());
 			}
 			BWAPI::Broodwar->setTextSize(2);
 			BWAPI::Broodwar->drawTextMap(mineral.x()-17, mineral.y()-16, (minerals[i].mining[j] ? "\x1F%d" : "\x0F%d"), resources);

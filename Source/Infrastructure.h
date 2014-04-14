@@ -1,5 +1,6 @@
 #pragma once
 #include "Resources.h"
+#include "Production.h"
 #include <algorithm>
 #include <sstream>
 #ifdef SAVE_IMG
@@ -7,7 +8,13 @@
 #endif
 
 namespace Cerebrate {
-	struct Resources::Miner;
+	namespace Industry {
+		struct Manager;
+	}
+	namespace Resources {
+		struct Miner;
+	}
+	
 	namespace Infrastructure {
 		inline unsigned walkTiles(BWAPI::TilePosition tile) {
 			unsigned tiles = 0;
@@ -37,7 +44,6 @@ namespace Cerebrate {
 			static double wpatch;
 			static double wchoke;
 			static double wpoly;
-//			static Map *map;
 
 			Ownership owner;
 			std::vector< Resource > patches;
@@ -59,7 +65,7 @@ namespace Cerebrate {
 			std::vector<double> ground;
 			std::vector<double> potential;
 
-			virtual void addBase(BaseInfo* b);
+			virtual void addBase(BaseInfo*);
 			bool compare(unsigned i, unsigned j);
 			virtual void sort();
 		};
@@ -68,7 +74,7 @@ namespace Cerebrate {
 			std::vector<double> air;
 			Location natural;
 
-			virtual void addBase(BaseInfo* b);
+			virtual void addBase(BaseInfo*);
 			virtual void sort();
 		};
 
@@ -85,17 +91,43 @@ namespace Cerebrate {
 
 			bool enemyKnown() const;
 
-			void expanded(BWAPI::Position where);
-			void enemySighted(BWAPI::Position where);
+			void expanded(BWAPI::Position);
+			void enemySighted(BWAPI::Position);
 
 			void populate();
 			void update();
 
-			BWAPI::TilePosition nextBase() const;
+			BaseInfo* nextBase() const;
+			BWAPI::TilePosition nextBasePosition() const;
 
 			void draw() const;
 		};
 
+
+		enum BuilderStates {
+			Moving,
+			Building,
+			Fleeing
+		};
+
+		struct BuilderDrone {
+			Unit drone;
+			BWAPI::UnitType building;
+			BuilderStates state;
+			
+			BWAPI::TilePosition target;
+			BWAPI::Position center;
+			
+			BuilderDrone(Unit, BWAPI::UnitType, BWAPI::TilePosition);
+		};
+		
+		struct BuilderSet {
+			std::vector<BuilderDrone> builders;
+			
+			bool in(Unit) const;
+			void act();
+			void draw() const;
+		};
 
 		struct BuildingSlot {
 			int x;
@@ -121,38 +153,40 @@ namespace Cerebrate {
 			Hatchery(Unit h, BaseInfo* b) : hatch(h), base(b) { }
 			
 			bool isMacro() const { return !base; }
-			bool isOccupied(BWAPI::TilePosition pos) const;
+			bool isOccupied(BWAPI::TilePosition) const;
 			bool canWall() const;
 		};
 
 		struct Builder {
 			BaseGraph* bases;
 			std::vector<Hatchery> hatcheries;
-			//std::vector<BuildingSlot>
+			BuilderSet builders;
 			
 			Builder() : bases(0) { }
 
 
 
-			BWAPI::TilePosition nextBase() const { return bases->nextBase(); }
+			BWAPI::TilePosition nextBase() const { return bases->nextBasePosition(); }
 			
 			Unitset getLarva() const;
-			bool drone(BWAPI::Position where);
-			bool build(Resources::Miner& miner, BWAPI::UnitType structure);
+			bool drone(BWAPI::Position);
+			bool build(Resources::Miner&, BWAPI::UnitType);
 			
 			
-			Unit getNearestHatch(BWAPI::Position where) const;
-			unsigned getNearestHatchIndex(BWAPI::Position where) const;
+			Unit getNearestHatch(BWAPI::Position) const;
+			unsigned getNearestHatchIndex(BWAPI::Position) const;
 			
 			
-			void addHatch(Unit hatch);
+			void addHatch(Unit);
 
-			BWAPI::Position spiral(BWAPI::Position center, BuildingSlot& slot, BWAPI::TilePosition position);
-			double getValue(int x, int y, BWAPI::TilePosition position);
-			bool onCreep(int x, int y, BWAPI::TilePosition position);
-			bool isOccupied(BWAPI::TilePosition pos) const;
+			BWAPI::Position spiral(BWAPI::Position, BuildingSlot&, BWAPI::TilePosition, bool creep) const;
+			double getValue(BWAPI::TilePosition, bool creep) const;
+			double getValue(int x, int y, BWAPI::TilePosition, bool creep) const;
+			bool onCreep(int x, int y, BWAPI::TilePosition) const;
+			bool isOccupied(BWAPI::TilePosition) const;
 			
-			void updateHatchs();
+			void act();
+			void update(Industry::Manager&);
 			void draw() const;
 		};
 	};

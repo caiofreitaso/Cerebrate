@@ -336,10 +336,6 @@
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
 			<File
-				RelativePath=".\Source\Cerebrate.h"
-				>
-			</File>
-			<File
 				RelativePath=".\Source\Dll.cpp"
 				>
 			</File>
@@ -348,15 +344,7 @@
 				>
 			</File>
 			<File
-				RelativePath=".\Source\Economy.h"
-				>
-			</File>
-			<File
 				RelativePath=".\Source\Infrastructure.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\Source\Infrastructure.h"
 				>
 			</File>
 			<File
@@ -364,7 +352,7 @@
 				>
 			</File>
 			<File
-				RelativePath=".\Source\Intelligence.h"
+				RelativePath=".\Source\Production.cpp"
 				>
 			</File>
 			<File
@@ -372,15 +360,7 @@
 				>
 			</File>
 			<File
-				RelativePath=".\Source\Resources.h"
-				>
-			</File>
-			<File
 				RelativePath=".\Source\Util.cpp"
-				>
-			</File>
-			<File
-				RelativePath=".\Source\Util.h"
 				>
 			</File>
 		</Filter>
@@ -389,6 +369,34 @@
 			Filter="h;hpp;hxx;hm;inl;inc;xsd"
 			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
 			>
+			<File
+				RelativePath=".\Source\Cerebrate.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Economy.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Infrastructure.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Intelligence.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Production.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Resources.h"
+				>
+			</File>
+			<File
+				RelativePath=".\Source\Util.h"
+				>
+			</File>
 		</Filter>
 		<Filter
 			Name="Resource Files"
