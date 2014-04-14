@@ -81,7 +81,7 @@ namespace Cerebrate {
 				double rs = a.d.x*d.y - d.x*a.d.y;
 				
 				if (rs > -0.00001 && rs < 0.00001)
-					return true;
+					return false;
 				
 				Point qp = origin - a.origin;
 				

@@ -584,11 +584,11 @@ void Cerebrate::Infrastructure::BuilderSet::draw() const {
 				color = BWAPI::Colors::Orange;
 				break;
 			case Cerebrate::Infrastructure::Building:
-				str = "\x17 Fleeing";
+				str = "\x10 Building";
 				color = BWAPI::Colors::Purple;
 				break;
 			case Cerebrate::Infrastructure::Fleeing:
-				str = "\x10 Building";
+				str = "\x17 Fleeing";
 				color = BWAPI::Colors::Yellow;
 				break;
 		}
@@ -725,25 +725,11 @@ void Cerebrate::Infrastructure::Builder::draw() const {
 										 hatcheries[i].hatch->getPosition().y(),
 										 "MACRO");
 		else {
-			if (hatcheries[i].base == bases->self().info) {
+			if (hatcheries[i].base == bases->self().info)
 				BWAPI::Broodwar->drawTextMap(hatcheries[i].hatch->getPosition().x() - 10,
 											 hatcheries[i].hatch->getPosition().y(),
 											 "MAIN");
-			 	for (int k = -5; k < 6; k++)
-					for (int j = -5; j < 6; j++) {
-						BWAPI::TilePosition newp(bases->self().info->base->getTilePosition());
-						newp.x() += k;
-						newp.y() += j;
-						
-						BWAPI::Position newpp(newp);
-						newpp.x() += 15;
-						newpp.y() += 15;
-						
-						double v = getValue(3,2,newp,true);
-						
-						BWAPI::Broodwar->drawTextMap(newpp.x(), newpp.y(), "%.3f", v);
-					}
-			} else if (hatcheries[i].base == bases->self().natural.info)
+			else if (hatcheries[i].base == bases->self().natural.info)
 				BWAPI::Broodwar->drawTextMap(hatcheries[i].hatch->getPosition().x() - 10,
 											 hatcheries[i].hatch->getPosition().y(),
 											 "NATURAL [%s]", (hatcheries[i].canWall() ? "YES" : "NO"));
