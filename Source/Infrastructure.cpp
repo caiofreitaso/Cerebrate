@@ -345,12 +345,14 @@ Cerebrate::Infrastructure::StartLocation const& Cerebrate::Infrastructure::BaseG
 Cerebrate::Base Cerebrate::Infrastructure::BaseGraph::enemyMain() const { return startLocations[enemyIndex].info->base; }
 Cerebrate::Infrastructure::StartLocation const& Cerebrate::Infrastructure::BaseGraph::enemy() const { return startLocations[enemyIndex]; }
 bool Cerebrate::Infrastructure::BaseGraph::enemyKnown() const { return enemyIndex < startLocations.size(); }
-void Cerebrate::Infrastructure::BaseGraph::expanded(BWAPI::Position where) {
-	for (unsigned i = 0; i < bases.size(); i++)
+unsigned Cerebrate::Infrastructure::BaseGraph::expanded(BWAPI::Position where) {
+	unsigned i = 0;
+	for (; i < bases.size(); i++)
 		if (where == bases[i].base->getPosition()) {
 			bases[i].owner = Mine;
-			return;
+			break;
 		}
+	return i;
 }
 void Cerebrate::Infrastructure::BaseGraph::enemySighted(BWAPI::Position where) {
 	for (unsigned i = 0; i < bases.size(); i++)
@@ -564,8 +566,12 @@ void Cerebrate::Infrastructure::BuilderSet::act() {
 					if (builders[i].drone->isMorphing())
 						builders[i].drone->cancelMorph();
 					builders[i].state = Cerebrate::Infrastructure::Fleeing;
-				} else if (!builders[i].drone->isConstructing())
-					builders[i].drone->build(builders[i].target,builders[i].building);
+				} else {
+					if (!builders[i].drone->isBeingConstructed())
+						builders[i].drone->build(builders[i].target,builders[i].building);
+					else if (builders[i].drone->isCompleted())
+						builders[i].state = Cerebrate::Infrastructure::Done;
+				}
 				break;
 			case Cerebrate::Infrastructure::Fleeing:
 				if (!builders[i].drone->isUnderAttack())
@@ -590,6 +596,10 @@ void Cerebrate::Infrastructure::BuilderSet::draw() const {
 			case Cerebrate::Infrastructure::Fleeing:
 				str = "\x17 Fleeing";
 				color = BWAPI::Colors::Yellow;
+				break;
+			case Cerebrate::Infrastructure::Done:
+				str = "\0";
+				color = BWAPI::Colors::Brown;
 				break;
 		}
 		
@@ -752,21 +762,36 @@ void Cerebrate::Infrastructure::Builder::act() {
 	builders.act();
 }
 void Cerebrate::Infrastructure::Builder::update(Industry::Manager& man) {
-	if (bases)
+	for (unsigned i = 0; i < builders.builders.size(); i++)
+		if (!builders.builders[i].drone->exists()) {
+			man.add(Industry::Production(builders.builders[i].building, 0.91));
+			builders.builders.erase(builders.builders.begin()+i);
+			i--;
+		} else {
+			if (builders.builders[i].drone->getType() == Hatch)
+				hatcheries.push_back(builders.builders[i].drone);
+		}
+	
+	if (bases) {
 		for (unsigned i = 0; i < hatcheries.size(); i++)
 			if (!hatcheries[i].base)
 				for (unsigned j = 0; j < bases->bases.size(); j++)
 					if (hatcheries[i].hatch->getPosition() == bases->bases[j].base->getPosition()) {
 						hatcheries[i].base = &bases->bases[j];
 						bases->bases[j].owner = Mine;
+						
+						/*if (hatcheries[i].canWall() && !hatcheries[i].wall.size()) {
+							BuildingSlot macro;
+							macro.x = 4;
+							macro.y = 3;
+							
+							spiral(BWAPI::Position(4,3),macro,hatcheries[i].hatch->getTilePosition(),false);
+							
+							hatcheries[i].wall.push_back(macro);
+						}*/
 						break;
 					}
-	for (unsigned i = 0; i < builders.builders.size(); i++)
-		if (!builders.builders[i].drone->exists()) {
-			man.add(Industry::Production(builders.builders[i].building, 0.91));
-			builders.builders.erase(builders.builders.begin()+i);
-			i--;
-		}
+	}
 }
 
 bool Cerebrate::Infrastructure::Builder::isOccupied(BWAPI::TilePosition pos) const {
@@ -907,29 +932,16 @@ bool Cerebrate::Infrastructure::Builder::build(Cerebrate::Resources::Miner& mine
 						s.position = hatcheries[i].wall[j].position;
 			}
 		
-		bool expand = false;
-		BuildingSlot macro;
-		macro.x = 4;
-		macro.y = 3;
-		
 		if (!s.position.x() && !s.position.y()) {
-			if (structure.isResourceDepot()) {
-				expand = true;
-				
+			if (structure.isResourceDepot())
 				s.position = bases->nextBasePosition();
-				
-				//spiral(BWAPI::Position(4,3),macro,s.position,false);
-			} else
+			else
 				spiral(BWAPI::Position(4,3),s,hatcheries[0].hatch->getTilePosition(), true);
 		}
 		
 		Unit target = miner.getDrone(BWAPI::Position(s.position));
 		if (target) {
 			builders.builders.push_back(BuilderDrone(target,structure,s.position));
-			/*if (expand) {
-				hatcheries.push_back(Hatchery(target));
-				//hatcheries.back().wall.push_back(macro);
-			}*/
 			return true;
 		}
 		return false;

@@ -91,7 +91,7 @@ namespace Cerebrate {
 
 			bool enemyKnown() const;
 
-			void expanded(BWAPI::Position);
+			unsigned expanded(BWAPI::Position);
 			void enemySighted(BWAPI::Position);
 
 			void populate();
@@ -107,7 +107,8 @@ namespace Cerebrate {
 		enum BuilderStates {
 			Moving,
 			Building,
-			Fleeing
+			Fleeing,
+			Done
 		};
 
 		struct BuilderDrone {
