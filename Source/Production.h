@@ -12,6 +12,9 @@ namespace Cerebrate {
 	namespace Infrastructure {
 		struct Builder;
 	}
+	namespace Intelligence {
+		struct Agent;
+	}
 	
 	namespace Industry {
 		struct Production {
@@ -35,6 +38,11 @@ namespace Cerebrate {
 				else
 					return tech.gasPrice();
 			}
+			int supply() const {
+				if (unit)
+					return type.supplyRequired();
+				return 0;
+			}
 			
 			bool isBuilding() const {
 				if (unit)
@@ -54,31 +62,34 @@ namespace Cerebrate {
 		class ProductionQueue {
 			std::vector<Production> _data;
 			public:
-				void add(Production p);
+				void add(Production);
 
 				Production& top();
 				Production const& top() const;
 
-				Production& operator[](unsigned i);
-				Production const& operator[](unsigned i) const;
+				Production& operator[](unsigned);
+				Production const& operator[](unsigned) const;
 
 				void pop();
 
 				unsigned size() const;
 
-				void update(double priorityThreshold);
+				void update(double);
 		};
 		
 		struct Manager {
 			ProductionQueue queue;
+			
+			Unitset hatcheries;
 
-			void add(Production p);
-			void morph(Infrastructure::Builder& builder);
-			void build(Infrastructure::Builder& builder, Resources::Miner& mines);
+			Unitset getLarva() const;
+			void add(Production);
+			bool morph();
+			bool build(Infrastructure::Builder&, Resources::Miner&, Economy::Economist&, Intelligence::Agent&, unsigned);
 			
-			void pop(Infrastructure::Builder& builder, Resources::Miner& mines, Economy::Economist& eco);
+			void pop(Infrastructure::Builder&, Resources::Miner&, Economy::Economist&, Intelligence::Agent&);
 			
-			void update(double threshold, Infrastructure::Builder& builder, Resources::Miner& mines, Economy::Economist& eco);
+			void update(double, Infrastructure::Builder&, Resources::Miner&, Economy::Economist&, Intelligence::Agent&);
 		};
 	}
 }

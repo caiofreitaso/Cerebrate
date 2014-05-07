@@ -1,13 +1,14 @@
 #pragma once
 #include "Economy.h"
 
-unsigned Cerebrate::Economy::Budget::start = 0;
+unsigned Cerebrate::Economy::Economist::start = 0;
 
-void Cerebrate::Economy::Economist::add(Cerebrate::Industry::Production type) {
+int Cerebrate::Economy::Economist::add(Cerebrate::Industry::Production type) {
 	Cerebrate::Economy::Budget b;
-	b.id = Cerebrate::Economy::Budget::start;
 	
-	Cerebrate::Economy::Budget::start++;
+	unsigned id = Cerebrate::Economy::Economist::start;
+	
+	Cerebrate::Economy::Economist::start++;
 	
 	if (type.unit) {
 		b.minerals = type.type.mineralPrice();
@@ -17,18 +18,35 @@ void Cerebrate::Economy::Economist::add(Cerebrate::Industry::Production type) {
 		b.gas = type.tech.gasPrice();
 	}
 	
-	budgets.push_back(b);
+	budgets[id] = b;
+	
+	return id;
+}
+
+int Cerebrate::Economy::Economist::add(Cerebrate::Economy::Budget budget) {
+	unsigned id = Cerebrate::Economy::Economist::start;
+	Cerebrate::Economy::Economist::start++;
+	
+	budgets[id] = budget;
+	
+	return id;
+}
+
+void Cerebrate::Economy::Economist::remove(unsigned id) {
+	budget_it i = budgets.find(id);
+	if (i != budgets.end())
+		budgets.erase(i);
 }
 
 int Cerebrate::Economy::Economist::minerals() const {
 	int ret = BWAPI::Broodwar->self()->minerals();
-	for (unsigned i = 0; i < budgets.size(); i++)
-		ret -= budgets[i].minerals;
+	for (budget_const i = budgets.begin(); i != budgets.end(); i++)
+		ret -= i->second.minerals;
 	return ret;
 }
 int Cerebrate::Economy::Economist::gas() const {
 	int ret = BWAPI::Broodwar->self()->gas();
-	for (unsigned i = 0; i < budgets.size(); i++)
-		ret -= budgets[i].gas;
+	for (budget_const i = budgets.begin(); i != budgets.end(); i++)
+		ret -= i->second.gas;
 	return ret;
 }

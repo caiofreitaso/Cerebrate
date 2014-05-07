@@ -8,17 +8,21 @@ namespace Cerebrate {
 	};
 	namespace Economy {
 		struct Budget {
-			static unsigned start;
-			
-			unsigned id;
 			int minerals;
 			int gas;
 		};
 		
 		struct Economist {
-			std::vector<Budget> budgets;
+			static unsigned start;
 			
-			void add(Industry::Production type);
+			std::map<unsigned, Budget> budgets;
+			typedef std::map<unsigned, Budget>::const_iterator budget_const;
+			typedef std::map<unsigned, Budget>::iterator budget_it;
+
+			
+			int add(Industry::Production);
+			int add(Budget);
+			void remove(unsigned);
 			
 			int minerals() const;
 			int gas() const;
