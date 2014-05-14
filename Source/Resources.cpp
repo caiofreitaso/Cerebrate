@@ -195,17 +195,22 @@ void Cerebrate::Resources::Miner::idleWorker(Cerebrate::Unit unit) {
 	if (!has(getAllMiners(),unit))
 	#endif
 	{
-		Unit mineral = 0;
-		unsigned i = 0;
+		Unit mineral = 0, best = 0;
+		double distance = 1e37;
+		unsigned i = 0, best_index = 0;
 		for (; i < minerals.size(); i++) {
 			mineral = minerals[i].getBestMineral();
 			if (mineral)
-				break;
+				if (mineral->getDistance(unit->getPosition()) < distance) {
+					distance = mineral->getDistance(unit->getPosition());
+					best = mineral;
+					best_index = i;
+				}
 		}
 		#ifdef NORMAL_MINING
 		unit->gather(mineral);
 		#else
-		minerals[i].addMiner(mineral,Cerebrate::Resources::MinerDrone(unit,Cerebrate::Resources::Returning));
+		minerals[best_index].addMiner(best,Cerebrate::Resources::MinerDrone(unit,Cerebrate::Resources::Returning));
 		#endif
 	}
 }

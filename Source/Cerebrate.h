@@ -54,7 +54,7 @@ namespace Cerebrate {
 		std::ofstream file;
 		#endif
 
-		Cerebrate(bool debug = true) : debug(debug),stage(Action),passivity(0.7) { }
+		Cerebrate(bool debug = true) : debug(debug),stage(Action),passivity(1) { }
 		~Cerebrate() {
 			#ifdef SAVE_CSV
 			file.close();
@@ -78,6 +78,8 @@ namespace Cerebrate {
 			BWAPI::Broodwar->setLocalSpeed(10);
 			if (!debug)
 				BWAPI::Broodwar->setGUI(false);
+			else
+				BWAPI::Broodwar->sendText("power overwhelming");
 			#pragma endregion
 
 			#pragma region Set main hatch
@@ -218,36 +220,36 @@ namespace Cerebrate {
 			switch(found) {
 				//5 pool
 				case 0:
-					industry.add(Industry::Production(Drone));
+					/*industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Pool));
 					industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Drone));
 					for (i = 0; i < 3; i++)
 						industry.add(Industry::Production(Ling));
-					break;
+					break;*/
 				//9 speed
 				case 1:
-					for (i = 0; i < 5; i++)
+					/*for (i = 0; i < 5; i++)
 						industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Pool));
 					industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Overlord));
 					for (i = 0; i < 3; i++)
 						industry.add(Industry::Production(Ling));
-					break;
+					break;*/
 				//9 pool
 				case 2:
-					for (i = 0; i < 5; i++)
+					/*for (i = 0; i < 5; i++)
 						industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Pool));
 					industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Overlord));
 					for (i = 0; i < 3; i++)
 						industry.add(Industry::Production(Ling));
-					break;
+					break;*/
 				//12 pool
 				case 3:
-					for (i = 0; i < 5; i++)
+					/*for (i = 0; i < 5; i++)
 						industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Overlord));
 					for (i = 0; i < 3; i++)
@@ -256,7 +258,7 @@ namespace Cerebrate {
 					industry.add(Industry::Production(Hatch));
 					for (i = 0; i < 3; i++)
 						industry.add(Industry::Production(Ling));
-					break;
+					break;*/
 				//12 hatch
 				case 4:
 					for (i = 0; i < 5; i++)

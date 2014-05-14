@@ -33,8 +33,12 @@ namespace Cerebrate {
 			extern double wchoke;
 			extern double wpoly;
 			
-			double value(Intelligence::Agent const&, const Builder, BWAPI::TilePosition, bool creep);
-			double value(Intelligence::Agent const&, const Builder, int x, int y, BWAPI::TilePosition, bool creep);
+			double value(Intelligence::Agent const&, const Builder, BWAPI::TilePosition, bool creep, bool occupied = true);
+			double value(Intelligence::Agent const&, const Builder, int x, int y, BWAPI::TilePosition, bool creep, bool occupied = true);
+			
+			double valueForTarget(BWAPI::Position, Intelligence::Agent const&, const Builder, BWAPI::TilePosition, bool creep, bool occupied = true);
+			double valueForTarget(BWAPI::Position, Intelligence::Agent const&, const Builder, int x, int y, BWAPI::TilePosition, bool creep, bool occupied = true);
+			
 			bool onCreep(int x, int y, BWAPI::TilePosition);
 		}
 	
@@ -72,8 +76,8 @@ namespace Cerebrate {
 			BWAPI::TilePosition position;
 			
 			bool isOccupied(BWAPI::TilePosition pos) const {
-				return pos.x() >= position.x() && pos.x() <= position.x() + x &&
-						pos.y() >= position.y() && pos.y() <= position.y() + y;
+				return pos.x() >= position.x() && pos.x() < position.x() + x &&
+						pos.y() >= position.y() && pos.y() < position.y() + y;
 			}
 			bool isHatch() const { return x == 4 && y == 3; }
 		};
@@ -92,6 +96,7 @@ namespace Cerebrate {
 			bool isMacro() const { return !base; }
 			bool isOccupied(BWAPI::TilePosition) const;
 			bool canWall() const;
+			bool adjacent(BuildingSlot) const;
 		};
 
 		struct Builder {
