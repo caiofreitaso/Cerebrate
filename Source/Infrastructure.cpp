@@ -32,7 +32,7 @@ double Cerebrate::Infrastructure::PotentialField::value(Intelligence::Agent cons
 	set[3] = set[2];
 	set[3].x += 31;
 	
-	if (!BWAPI::Broodwar->isBuildable(tile))
+	if (!BWAPI::Broodwar->isBuildable(tile,true))
 		tileValue -= 80;
 
 	for (unsigned k = 0; k < a.graph->bases[b].patches.size(); k++) {
@@ -149,9 +149,9 @@ double Cerebrate::Infrastructure::PotentialField::valueForTarget(BWAPI::Position
 		d += set[j].distance(pos);
 	d /= 4;
 	
-	tileValue = 20000/(d*d);
+	tileValue += 100000/(d*d);
 	
-	if (!BWAPI::Broodwar->isBuildable(tile))
+	if (!BWAPI::Broodwar->isBuildable(tile,true))
 		tileValue -= 80;
 	if (occupied && builder.isOccupied(tile))
 		tileValue -= 80;	
@@ -474,8 +474,10 @@ void Cerebrate::Infrastructure::Builder::draw(Intelligence::Agent const& a) cons
 				//		
 				//		BWAPI::Position qq(pp);
 				//		
-				//		//BWAPI::Broodwar->drawTextMap(qq.x(),qq.y(),"\x04%.0f\n\x11%.2f", PotentialField::value(a,*this,4,3,pp,false,false),PotentialField::value(a,*this,pp,false,false));
-				//		BWAPI::Broodwar->drawTextMap(qq.x(),qq.y(),"\x04%.2f\n%dx%d", PotentialField::valueForTarget(hatcheries[i].base->base->getPosition(),a,*this,pp,false,false),pp.x(),pp.y());
+				//		BWAPI::Broodwar->drawTextMap(qq.x(),qq.y(),"\x04%.0f\n\x11%.2f", PotentialField::value(a,*this,4,3,pp,false,false),PotentialField::value(a,*this,pp,false,false));
+				//		/*BWAPI::Broodwar->drawTextMap(qq.x(),qq.y(),"\x04%.2f\n%dx%d",
+				//			PotentialField::valueForTarget(hatcheries[i].base->base->getPosition(),a,*this,pp,false,true),
+				//			pp.x(),pp.y());*/
 				//	}
 			} else
 				BWAPI::Broodwar->drawTextMap(pos.x() - 10, pos.y(), "BASE [%s]", (hatcheries[i].canWall() ? "YES" : "NO"));
@@ -566,6 +568,42 @@ BWAPI::Position Cerebrate::Infrastructure::Builder::spiral(Intelligence::Agent c
 		bool changed = true;
 		slot.position = position;
 		double current_value = PotentialField::value(a, *this, slot.x,slot.y,position,creep);
+		
+		for (int i = -slot.x; i <= center.x(); i++) {
+			BWAPI::TilePosition tile = BWAPI::TilePosition(position.x()+i,position.y()-slot.y);
+			double v = PotentialField::value(a,*this, slot.x,slot.y, tile, false);
+			
+			if (v > current_value) {
+				current_value = v;
+				slot.position = tile;
+			}
+			
+			tile.y() = position.y() + slot.y;
+			v = PotentialField::value(a,*this, slot.x,slot.y, tile, false);
+			
+			if (v > current_value) {
+				current_value = v;
+				slot.position = tile;
+			}
+		}
+		
+		for (int i = 0; i < slot.y; i++) {
+			BWAPI::TilePosition tile = BWAPI::TilePosition(position.x()-slot.x,position.y()+i);
+			double v = PotentialField::value(a,*this, slot.x,slot.y, tile, false);
+			
+			if (v > current_value) {
+				current_value = v;
+				slot.position = tile;
+			}
+			
+			tile.x() = position.x() + slot.x;
+			v = PotentialField::value(a,*this, slot.x,slot.y, tile, false);
+			
+			if (v > current_value) {
+				current_value = v;
+				slot.position = tile;
+			}
+		}
 		
 		while(changed) {
 			for (int i = -1; i < 2; i++)

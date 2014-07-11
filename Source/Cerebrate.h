@@ -54,14 +54,14 @@ namespace Cerebrate {
 		std::ofstream file;
 		#endif
 
-		Cerebrate(bool debug = true) : debug(debug),stage(Action),passivity(1) { }
+		Cerebrate(bool debug = true) : debug(debug),stage(Action),passivity(0) { }
 		~Cerebrate() {
 			#ifdef SAVE_CSV
 			file.close();
 			#endif
 		}
 		
-		std::set<Unit> allUnits() const {
+		const std::set<Unit>& allUnits() const {
 			return BWAPI::Broodwar->self()->getUnits();
 		}
 		typedef std::set<Unit>::iterator unit_it;
@@ -217,39 +217,40 @@ namespace Cerebrate {
 					break;
 				}
 			}
+			found = 4;
 			switch(found) {
 				//5 pool
 				case 0:
-					/*industry.add(Industry::Production(Drone));
+					industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Pool));
 					industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Drone));
 					for (i = 0; i < 3; i++)
 						industry.add(Industry::Production(Ling));
-					break;*/
-				//9 speed
-				case 1:
-					/*for (i = 0; i < 5; i++)
-						industry.add(Industry::Production(Drone));
-					industry.add(Industry::Production(Pool));
-					industry.add(Industry::Production(Drone));
-					industry.add(Industry::Production(Overlord));
-					for (i = 0; i < 3; i++)
-						industry.add(Industry::Production(Ling));
-					break;*/
+					break;
 				//9 pool
-				case 2:
-					/*for (i = 0; i < 5; i++)
+				case 1:
+					for (i = 0; i < 5; i++)
 						industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Pool));
 					industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Overlord));
 					for (i = 0; i < 3; i++)
 						industry.add(Industry::Production(Ling));
-					break;*/
+					break;
+				//Overpool
+				case 2:
+					for (i = 0; i < 5; i++)
+						industry.add(Industry::Production(Drone));
+					industry.add(Industry::Production(Overlord));
+					industry.add(Industry::Production(Pool));
+					industry.add(Industry::Production(Drone));
+					for (i = 0; i < 3; i++)
+						industry.add(Industry::Production(Ling));
+					break;
 				//12 pool
 				case 3:
-					/*for (i = 0; i < 5; i++)
+					for (i = 0; i < 5; i++)
 						industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Overlord));
 					for (i = 0; i < 3; i++)
@@ -258,7 +259,7 @@ namespace Cerebrate {
 					industry.add(Industry::Production(Hatch));
 					for (i = 0; i < 3; i++)
 						industry.add(Industry::Production(Ling));
-					break;*/
+					break;
 				//12 hatch
 				case 4:
 					for (i = 0; i < 5; i++)
@@ -268,13 +269,31 @@ namespace Cerebrate {
 						industry.add(Industry::Production(Drone));
 					industry.add(Industry::Production(Hatch));
 					industry.add(Industry::Production(Pool));
+					industry.add(Industry::Production(Ling));
+					industry.add(Industry::Production(Ling));
 					break;
 			}
 		}
 
 		void update() {
+			bool attacked = false, eggs = false, onenemy = false;
+			for (std::set<Unit>::const_iterator it = BWAPI::Broodwar->self()->getUnits().begin(); it != BWAPI::Broodwar->self()->getUnits().end(); it++) {
+				if ((*it)->isUnderAttack())
+					attacked = true;
+					
+				if ((*it)->getType() == Egg)
+					eggs = true;
+				
+				if (intel.graph)
+					if (intel.graph->enemyKnown())
+						if (TerrainAnalysis::in(intel.graph->enemy().info->region, (*it)->getPosition()))
+							onenemy = true;
+			}
+				
 			#ifdef SAVE_CSV
-			file << player->gatheredMinerals() - 50 << "," << BWAPI::Broodwar->getAPM() << "\n";
+			file << BWAPI::Broodwar->getFrameCount() << "," << BWAPI::Broodwar->self()->gatheredMinerals() - 50 << 
+					"," << industry.queue.size() << "," << (int)attacked << "," << (int)eggs <<
+					"," << (int)onenemy << "\n";
 			#endif
 			intel.update();
 			publicWorks.update(industry,intel);
@@ -300,6 +319,8 @@ namespace Cerebrate {
 			publicWorks.act(finances,industry,mines,intel);
 			mines.act();
 			
+			
+			unsigned bases = 0;
 			std::set<Unit> units = allUnits();
 			for (unit_it u = units.begin(); u != units.end(); u++) {
 				if (isntValid(*u))
@@ -310,6 +331,13 @@ namespace Cerebrate {
 						if (!publicWorks.builders.in(*u))
 							mines.idleWorker(*u);
 					} else {
+						if((*u)->getType() != Overlord)
+							if (intel.graph) {
+								(*u)->move(intel.graph->startLocations[bases].info->base->getPosition());
+								bases++;
+								if (bases == intel.graph->startLocations.size())
+									bases = 0;
+							}
 					}
 				}
 			}
@@ -463,7 +491,6 @@ namespace Cerebrate {
 						graph->selfIndex = i;
 						break;
 					}
-					graph->startLocations[i].info->owner = Intelligence::His;
 				}
 				target->intel.graph = graph;
 

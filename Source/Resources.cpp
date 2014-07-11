@@ -209,14 +209,16 @@ void Cerebrate::Resources::Miner::idleWorker(Cerebrate::Unit unit) {
 		}
 		#ifdef NORMAL_MINING
 		unit->gather(mineral);
-		#else
-		minerals[best_index].addMiner(best,Cerebrate::Resources::MinerDrone(unit,Cerebrate::Resources::Returning));
 		#endif
+		minerals[best_index].addMiner(best,Cerebrate::Resources::MinerDrone(unit,Cerebrate::Resources::Returning));
+		
 	}
 }
 void Cerebrate::Resources::Miner::act() {
+	#ifndef NORMAL_MINING
 	for (unsigned i = 0; i < minerals.size(); i++)
 		minerals[i].act();
+	#endif
 }
 void Cerebrate::Resources::Miner::draw() {
 	for (unsigned i = 0; i < minerals.size(); i++) {

@@ -47,10 +47,8 @@ void Cerebrate::Intelligence::BaseInfo::draw() const {
 	}
 
 	for (unsigned i = 0; i < patches.size(); i++)
-		if (patches[i].position.first || patches[i].position.second) {
-			BWAPI::Broodwar->drawLineMap(patches[i].position.first, patches[i].position.second, position.x(), position.y(), BWAPI::Colors::Yellow);
+		if (patches[i].position.first || patches[i].position.second)
 			BWAPI::Broodwar->drawCircleMap(patches[i].position.first, patches[i].position.second, 3, BWAPI::Colors::Yellow);
-		}
 
 	BWTA::Polygon poly = base->getRegion()->getPolygon();
 	unsigned k = 0;
@@ -269,6 +267,7 @@ void Cerebrate::Intelligence::BaseGraph::update() {
 		aux = startLocations[selfIndex].natural.bases[i]->gas();
 		aux /= 10000;
 		gas = aux + 0.5;
+		gas = gas > 1 ? 1 : gas;
 
 		startLocations[selfIndex].natural.potential[i] = (nearMe * farFromHim) * (minerals * patches*patches*patches * gas);
 	}
